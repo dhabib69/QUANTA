@@ -1,0 +1,2050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QUANTA v11.5b Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #08090f;
+      --bg-secondary: #0e1019;
+      --bg-card: rgba(16, 18, 32, 0.85);
+      --bg-card-hover: rgba(22, 25, 45, 0.95);
+      --border: rgba(99, 110, 180, 0.12);
+      --border-hover: rgba(99, 110, 180, 0.25);
+      --accent: #6c5ce7;
+      --accent-glow: rgba(108, 92, 231, 0.15);
+      --accent-2: #a29bfe;
+      --green: #00e676;
+      --green-dim: rgba(0, 230, 118, 0.12);
+      --red: #ff5252;
+      --red-dim: rgba(255, 82, 82, 0.12);
+      --yellow: #ffab40;
+      --yellow-dim: rgba(255, 171, 64, 0.12);
+      --cyan: #18ffff;
+      --text-primary: #e8ecf4;
+      --text-secondary: #8892b0;
+      --text-muted: #5a6380;
+      --font: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+      --mono: 'JetBrains Mono', 'Consolas', monospace;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+      --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ═══════════════════ HEADER ═══════════════════ */
+    .header {
+      background: linear-gradient(135deg, rgba(14, 16, 25, 0.95), rgba(20, 22, 38, 0.95));
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-logo {
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      background: linear-gradient(135deg, #6c5ce7, #a29bfe, #6c5ce7);
+      background-size: 200% 200%;
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shimmer 3s ease-in-out infinite;
+    }
+
+    @keyframes shimmer {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+
+    .version-badge {
+      background: linear-gradient(135deg, var(--accent), #7c6cf0);
+      color: #fff;
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .header-status {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .status-dot.offline { background: var(--red); box-shadow: 0 0 8px var(--red); }
+    .status-dot.training { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    .header-clock {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .header-refresh {
+      font-size: 11px;
+      color: var(--text-muted);
+      opacity: 0.6;
+    }
+
+    /* ═══════════════════ TABS ═══════════════════ */
+    .tabs {
+      display: flex;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 0 28px;
+      gap: 2px;
+    }
+
+    .tab {
+      padding: 14px 22px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+    }
+
+    .tab:hover { color: var(--text-secondary); background: rgba(255,255,255,0.02); }
+    .tab.active {
+      color: var(--accent-2);
+      border-bottom-color: var(--accent);
+      background: rgba(108, 92, 231, 0.05);
+    }
+
+    .tab-icon { font-size: 15px; }
+
+    /* ═══════════════════ CONTENT ═══════════════════ */
+    .content {
+      padding: 24px 28px;
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    .panel { display: none; animation: fadeIn 0.3s ease; }
+    .panel.active { display: block; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ═══════════════════ GRID ═══════════════════ */
+    .grid { display: grid; gap: 16px; }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .grid-4 { grid-template-columns: repeat(4, 1fr); }
+    .grid-5 { grid-template-columns: repeat(5, 1fr); }
+    .mb { margin-bottom: 16px; }
+    .mb-lg { margin-bottom: 24px; }
+
+    /* ═══════════════════ CARDS ═══════════════════ */
+    .card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      transition: all 0.25s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(108, 92, 231, 0.3), transparent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow);
+    }
+
+    .card:hover::before { opacity: 1; }
+
+    .card-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-title .icon { font-size: 14px; }
+
+    /* ═══════════════════ METRICS ═══════════════════ */
+    .metric {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      line-height: 1.1;
+    }
+
+    .metric-sm {
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .metric.green { color: var(--green); }
+    .metric.red { color: var(--red); }
+    .metric.yellow { color: var(--yellow); }
+    .metric.accent { color: var(--accent-2); }
+    .metric.cyan { color: var(--cyan); }
+
+    .metric-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      font-weight: 400;
+    }
+
+    .metric-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      font-family: var(--mono);
+    }
+
+    /* Stat row inside cards */
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+    }
+
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { color: var(--text-secondary); font-size: 13px; }
+    .stat-value { font-weight: 600; font-family: var(--mono); font-size: 13px; }
+
+    /* ═══════════════════ TABLES ═══════════════════ */
+    table { width: 100%; border-collapse: collapse; }
+    
+    tr.clickable { cursor: pointer; transition: background 0.2s ease; }
+    tr.clickable:hover { background: rgba(255,255,255,0.05); }
+
+    th {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.15);
+    }
+
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      font-size: 13px;
+    }
+
+    tr { transition: background 0.15s; }
+    tr:hover td { background: rgba(108, 92, 231, 0.04); }
+
+    .table-empty {
+      color: var(--text-muted);
+      text-align: center;
+      padding: 24px;
+      font-style: italic;
+    }
+
+    /* ═══════════════════ TAGS ═══════════════════ */
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .tag.bull { background: var(--green-dim); color: var(--green); }
+    .tag.bear { background: var(--red-dim); color: var(--red); }
+    .tag.neutral { background: var(--yellow-dim); color: var(--yellow); }
+    .tag.ready { background: var(--green-dim); color: var(--green); }
+    .tag.offline { background: var(--red-dim); color: var(--red); }
+    .tag.accent { background: var(--accent-glow); color: var(--accent-2); }
+
+    /* ═══════════════════ CHARTS ═══════════════════ */
+    canvas { max-height: 240px; }
+
+    /* ═══════════════════ LOG BOX ═══════════════════ */
+    .log-box {
+      background: rgba(4, 5, 10, 0.8);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.7;
+      max-height: 340px;
+      overflow-y: auto;
+      color: var(--text-secondary);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .log-box::-webkit-scrollbar { width: 6px; }
+    .log-box::-webkit-scrollbar-track { background: transparent; }
+    .log-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ═══════════════════ AGENT CARDS ═══════════════════ */
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px;
+    }
+
+    .agent-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      transition: all 0.25s ease;
+      position: relative;
+    }
+
+    .agent-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 20px var(--accent-glow);
+      transform: translateY(-2px);
+    }
+
+    .agent-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .agent-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      background: linear-gradient(135deg, var(--accent-glow), rgba(162, 155, 254, 0.1));
+      border: 1px solid rgba(108, 92, 231, 0.2);
+    }
+
+    .agent-name {
+      font-weight: 700;
+      font-size: 14px;
+      text-transform: capitalize;
+      letter-spacing: 0.5px;
+    }
+
+    .agent-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      margin-bottom: 12px;
+    }
+
+    .agent-stats {
+      display: flex;
+      gap: 16px;
+    }
+
+    .agent-stat {
+      flex: 1;
+    }
+
+    .agent-stat-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .agent-stat-value {
+      font-size: 15px;
+      font-weight: 700;
+      font-family: var(--mono);
+      margin-top: 2px;
+    }
+
+    /* ═══════════════════ BRIER BARS ═══════════════════ */
+    .brier-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 0;
+    }
+
+    .brier-name {
+      width: 90px;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: capitalize;
+    }
+
+    .brier-bar-bg {
+      flex: 1;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 4px;
+      height: 8px;
+      overflow: hidden;
+    }
+
+    .brier-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.6s ease;
+    }
+
+    .brier-value {
+      width: 55px;
+      text-align: right;
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--text-secondary);
+    }
+
+    /* ═══════════════════ RISK EVENTS ═══════════════════ */
+    .risk-event {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      background: rgba(255, 82, 82, 0.04);
+      border: 1px solid rgba(255, 82, 82, 0.08);
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .risk-event .re-type {
+      font-weight: 600;
+      color: var(--yellow);
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      min-width: 100px;
+    }
+
+    .risk-event .re-detail { color: var(--text-secondary); flex: 1; }
+
+    /* ═══════════════════ DRIFT ALERT ═══════════════════ */
+    .drift-alert {
+      background: rgba(255, 171, 64, 0.06);
+      border: 1px solid rgba(255, 171, 64, 0.15);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--yellow);
+    }
+
+    /* ═══════════════════ SECTION TITLE ═══════════════════ */
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, var(--border), transparent);
+    }
+
+    /* ═══════════════════ CLICKABLE AGENT CARDS ═══════════════════ */
+    .agent-card.clickable { cursor: pointer; }
+    .agent-card.clickable::after {
+      content: 'Click for details →';
+      position: absolute; bottom: 8px; right: 12px;
+      font-size: 9px; color: var(--text-muted); opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .agent-card.clickable:hover::after { opacity: 1; }
+
+    /* ═══════════════════ MODAL ═══════════════════ */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+      align-items: center; justify-content: center;
+      animation: fadeIn 0.2s ease;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: linear-gradient(145deg, #0e1019, #141628);
+      border: 1px solid var(--border-hover);
+      border-radius: var(--radius-lg); padding: 0;
+      width: 640px; max-width: 92vw; max-height: 85vh;
+      overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+      animation: slideUp 0.3s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .modal::-webkit-scrollbar { width: 6px; }
+    .modal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .modal-header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 24px 28px 16px; border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; background: rgba(14,16,25,0.98); z-index: 2;
+    }
+    .modal-header .agent-avatar { width: 48px; height: 48px; font-size: 26px; border-radius: 14px; }
+    .modal-header h2 { font-size: 20px; font-weight: 800; text-transform: capitalize; letter-spacing: 1px; }
+    .modal-header .tag { margin-left: 8px; }
+    .modal-close {
+      margin-left: auto; background: none; border: 1px solid var(--border);
+      color: var(--text-muted); width: 32px; height: 32px; border-radius: 8px;
+      cursor: pointer; font-size: 16px; display: flex; align-items: center;
+      justify-content: center; transition: all 0.2s;
+    }
+    .modal-close:hover { border-color: var(--red); color: var(--red); }
+    .modal-body { padding: 20px 28px 28px; }
+    .modal-section { margin-bottom: 20px; }
+    .modal-section h3 {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
+      color: var(--accent-2); margin-bottom: 10px; font-weight: 700;
+    }
+    .modal-section p { font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
+    .math-block {
+      background: rgba(0,0,0,0.4); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 14px 18px;
+      font-family: var(--mono); font-size: 13px; color: var(--cyan);
+      line-height: 1.8; margin: 10px 0; overflow-x: auto; white-space: pre;
+    }
+    .modal-stats {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+      margin: 14px 0;
+    }
+    .modal-stat {
+      background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 12px; text-align: center;
+      position: relative;
+    }
+    .modal-stat .label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .modal-stat .val { font-size: 18px; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
+    .barrier-hit-icon {
+      position: absolute; top: 6px; right: 6px;
+      width: 14px; height: 14px; 
+      border-radius: 50%; display: flex;
+      align-items: center; justify-content: center;
+      font-size: 8px; font-weight: 800;
+      border: 1px solid rgba(255,255,255,0.1);
+      color: transparent;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .barrier-hit-icon.hit {
+      background: var(--green);
+      color: #fff;
+      border-color: var(--green);
+      transform: scale(1.1);
+      box-shadow: 0 0 10px rgba(0,255,150,0.3);
+    }
+    .barrier-hit-icon.hit.sl {
+      background: var(--red);
+      border-color: var(--red);
+      box-shadow: 0 0 10px rgba(255,82,82,0.3);
+    }
+    .dist-tag {
+      font-size: 9px; opacity: 0.5; margin-top: 2px;
+      font-family: var(--mono);
+    }
+    @keyframes popIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    /* ═══════════════════ TECH FEATURE CARDS ═══════════════════ */
+    .tech-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 24px;
+      transition: all 0.3s ease; position: relative; overflow: hidden;
+    }
+    .tech-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--cyan));
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .tech-card:hover { border-color: var(--border-hover); transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+    .tech-card:hover::before { opacity: 1; }
+    .tech-card-icon { font-size: 28px; margin-bottom: 12px; }
+    .tech-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--text-primary); }
+    .tech-card .tech-subtitle { font-size: 11px; color: var(--accent-2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
+    .tech-card p { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 12px; }
+    .tech-card .math-block { font-size: 11px; margin: 8px 0; padding: 10px 14px; }
+    .tech-card .tech-ref { font-size: 10px; color: var(--text-muted); font-style: italic; }
+    .tech-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+
+    .card-header-flex {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 4px;
+    }
+    .table-toggle {
+      display: flex; background: rgba(0,0,0,0.2); border-radius: 8px;
+      padding: 3px; border: 1px solid var(--border);
+    }
+    .table-toggle button {
+      background: none; border: none; font-size: 10px; color: var(--text-muted);
+      padding: 4px 10px; border-radius: 6px; cursor: pointer;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+      transition: all 0.2s;
+    }
+    .table-toggle button.active {
+      background: var(--accent-2); color: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .res-badge {
+      font-size: 9px; padding: 2px 6px; border-radius: 4px;
+      font-weight: 800; font-family: var(--mono);
+    }
+    .res-badge.tp { background: rgba(0,255,150,0.1); color: var(--green); border: 1px solid rgba(0,255,150,0.2); }
+    .res-badge.sl { background: rgba(255,82,82,0.1); color: var(--red); border: 1px solid rgba(255,82,82,0.2); }
+
+    /* ═══════════════════ RESPONSIVE ═══════════════════ */
+    @media (max-width: 1024px) {
+      .grid-4 { grid-template-columns: repeat(2, 1fr); }
+      .grid-5 { grid-template-columns: repeat(3, 1fr); }
+      .modal-stats { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 768px) {
+      .grid-2, .grid-3, .grid-4, .grid-5 { grid-template-columns: 1fr; }
+      .content { padding: 16px; }
+      .header { padding: 12px 16px; }
+      .tabs { padding: 0 16px; overflow-x: auto; }
+      .tech-grid { grid-template-columns: 1fr; }
+      .modal-stats { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════ HEADER ═══════════════════ -->
+<div class="header">
+  <div class="header-brand">
+    <span class="header-logo">⚡ QUANTA</span>
+    <span class="version-badge">v11.5b</span>
+  </div>
+  <div class="header-status">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text" style="font-size:12px;color:var(--text-secondary)">Connecting...</span>
+    <span class="header-clock" id="live-clock"></span>
+    <span class="header-refresh">auto-refresh 5s</span>
+  </div>
+</div>
+
+<!-- ═══════════════════ TABS ═══════════════════ -->
+<div class="tabs">
+  <div class="tab active" onclick="showTab('overview')">
+    <span class="tab-icon">📊</span> Overview
+  </div>
+  <div class="tab" onclick="showTab('predictions')">
+    <span class="tab-icon">🎯</span> Predictions
+  </div>
+  <div class="tab" onclick="showTab('models')">
+    <span class="tab-icon">🧠</span> Models
+  </div>
+  <div class="tab" onclick="showTab('system')">
+    <span class="tab-icon">🖥️</span> System
+  </div>
+  <div class="tab" onclick="showTab('settings')">
+    <span class="tab-icon">⚡</span> ZEUS.ai
+  </div>
+  <div class="tab" onclick="showTab('tech')">
+    <span class="tab-icon">🔬</span> Technology
+  </div>
+</div>
+
+<!-- ═══════════════════ OVERVIEW TAB ═══════════════════ -->
+<div id="tab-overview" class="content panel active">
+
+  <!-- KPI Cards -->
+  <div class="grid grid-5 mb">
+    <div class="card">
+      <div class="card-title"><span class="icon">💰</span> Balance</div>
+      <div class="metric green" id="balance">$0.00</div>
+      <div class="metric-label">paper trading</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">📈</span> Total P&L</div>
+      <div class="metric" id="pnl">$0.00</div>
+      <div class="metric-sub" id="pnl-pct">0.00%</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">📊</span> Win Rate</div>
+      <div class="metric yellow" id="win-rate">—</div>
+      <div class="metric-sub" id="win-sub">0W / 0L</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">🎲</span> Open Positions</div>
+      <div class="metric accent" id="open-pos">0</div>
+      <div class="metric-sub" id="pos-sub">active trades</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">📉</span> Max Drawdown</div>
+      <div class="metric red" id="max-dd">0.00%</div>
+      <div class="metric-sub" id="current-dd">current: 0.00%</div>
+    </div>
+  </div>
+
+  <!-- Charts + Live Positions -->
+  <div class="grid grid-2 mb">
+    <div class="card">
+      <div class="card-title"><span class="icon">📈</span> Equity Curve</div>
+      <canvas id="equityChart"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-header-flex">
+        <div class="card-title"><span class="icon">⚡</span> <span id="pos-card-header">Open Positions</span></div>
+        <div class="table-toggle">
+          <button id="toggle-active" class="active" onclick="togglePosView('active')">Active</button>
+          <button id="toggle-history" onclick="togglePosView('history')">History</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr><th>Symbol</th><th>Direction</th><th>Entry</th><th>Size</th><th>Conf</th></tr>
+          </thead>
+          <tbody id="positions-body">
+            <tr><td colspan="5" class="table-empty">No open positions</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Secondary stats -->
+  <div class="grid grid-3 mb">
+    <div class="card">
+      <div class="card-title"><span class="icon">😨</span> Fear & Greed</div>
+      <div class="metric" id="fg-value" style="color:var(--yellow)">—</div>
+      <div class="metric-label" id="fg-label">loading...</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">🧠</span> RL Memory</div>
+      <div class="stat-row"><span class="stat-label">Buffer Size</span><span class="stat-value" id="rl-buffer">—</span></div>
+      <div class="stat-row"><span class="stat-label">Predictions</span><span class="stat-value" id="rl-total">—</span></div>
+      <div class="stat-row"><span class="stat-label">Pending</span><span class="stat-value" id="rl-pending">—</span></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">🛡️</span> Risk Status</div>
+      <div class="stat-row"><span class="stat-label">Trading</span><span class="stat-value" id="risk-paused" style="color:var(--green)">Active</span></div>
+      <div class="stat-row"><span class="stat-label">Daily P&L</span><span class="stat-value" id="risk-daily-pnl">$0.00</span></div>
+      <div class="stat-row"><span class="stat-label">Loss Streak</span><span class="stat-value" id="risk-streak">0</span></div>
+    </div>
+  </div>
+
+  <!-- Drift Alerts -->
+  <div id="drift-alerts-container" style="display:none;" class="mb"></div>
+</div>
+
+<!-- ═══════════════════ PREDICTIONS TAB ═══════════════════ -->
+<div id="tab-predictions" class="content panel">
+  <div class="grid grid-2 mb">
+    <div class="card">
+      <div class="card-title"><span class="icon">🎯</span> Live Alerts</div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr><th>Time</th><th>Symbol</th><th>Direction</th><th>Conf</th><th>Status</th><th>Entry</th></tr>
+          </thead>
+          <tbody id="preds-body">
+            <tr><td colspan="6" class="table-empty">Waiting for predictions...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">✅</span> RL Outcomes</div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr><th>Symbol</th><th>Direction</th><th>Conf</th><th>Outcome</th><th>Move</th></tr>
+          </thead>
+          <tbody id="outcomes-body">
+            <tr><td colspan="5" class="table-empty">Waiting for outcomes (need 1h)...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title"><span class="icon">📊</span> Outcome Distribution</div>
+    <canvas id="outcomeChart"></canvas>
+  </div>
+</div>
+
+<!-- ═══════════════════ MODELS TAB ═══════════════════ -->
+<div id="tab-models" class="content panel">
+  <div class="section-title mb">
+    <span>🏛️</span> Greek Pantheon Specialists — Generation <span id="model-gen">0</span>
+  </div>
+
+  <div class="agent-grid mb-lg" id="agents-grid"></div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <div class="card-title"><span class="icon">📐</span> Brier Score Calibration</div>
+      <div class="metric-label" style="margin-bottom:12px">Lower = better calibrated probability estimates</div>
+      <div id="brier-bars"></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">📊</span> Model Monitor</div>
+      <div class="stat-row"><span class="stat-label">Rolling Accuracy</span><span class="stat-value" id="mon-accuracy">—</span></div>
+      <div class="stat-row"><span class="stat-label">Calibration Error (ECE)</span><span class="stat-value" id="mon-ece">—</span></div>
+      <div class="stat-row"><span class="stat-label">Feature Drift Score</span><span class="stat-value" id="mon-drift">—</span></div>
+      <div class="stat-row"><span class="stat-label">Total Predictions</span><span class="stat-value" id="mon-total">—</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ AGENT DETAIL MODAL ═══════════════════ -->
+<div class="modal-overlay" id="agent-modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="agent-avatar" id="modal-avatar">🦉</div>
+      <div><h2 id="modal-name">Athena</h2><span class="tag accent" id="modal-role">Trend Rider</span></div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <h3>📖 Description</h3>
+        <p id="modal-desc"></p>
+      </div>
+      <div class="modal-stats" id="modal-stats"></div>
+      <div class="modal-section">
+        <h3>🧮 Feature Domain</h3>
+        <p id="modal-domain"></p>
+      </div>
+      <div class="modal-section">
+        <h3>📐 Core Mathematics</h3>
+        <div id="modal-math"></div>
+      </div>
+      <div class="modal-section">
+        <h3>⚙️ Hyperparameters</h3>
+        <div id="modal-hyperparams"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ PREDICTION THOUGHT PROCESS MODAL ═══════════════════ -->
+<div class="modal-overlay" id="thought-modal" onclick="if(event.target===this)closeThoughtModal()">
+  <div class="modal" style="width: 700px;">
+    <div class="modal-header">
+      <div>
+        <h2 id="thought-symbol" style="display:inline-block; margin-right: 12px;">BTCUSDT</h2>
+        <span class="tag green" id="thought-dir">BULLISH</span>
+      </div>
+      <button class="modal-close" onclick="closeThoughtModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="grid grid-2 mb">
+        <div class="modal-stat"><div class="label">PPO RL Action</div><div class="val" id="thought-ppo-action">—</div></div>
+        <div class="modal-stat"><div class="label">Sizing Multiplier</div><div class="val" id="thought-ppo-size">—</div></div>
+      </div>
+      
+      <div class="modal-section">
+        <h3>🧠 Greek Pantheon Votes (Raw Probability)</h3>
+        <div id="thought-specialists"></div>
+      </div>
+
+      <div class="modal-section" id="thought-shap-sec">
+        <h3>🔬 Explainability (SHAP Values)</h3>
+        <div class="math-block" id="thought-shap">No explanation available.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ TECHNOLOGY TAB ═══════════════════ -->
+<div id="tab-tech" class="content panel">
+  <div class="section-title mb">
+    <span>🔬</span> QUANTA v11.5b — Advanced Technology Stack
+  </div>
+  <p style="color:var(--text-secondary);margin-bottom:20px;font-size:13px;max-width:800px;line-height:1.7">
+    Every prediction in QUANTA is backed by peer-reviewed research. Below is the complete list of mathematical models, algorithms, and techniques powering the system.
+  </p>
+  <div class="tech-grid">
+
+    <div class="tech-card">
+      <div class="tech-card-icon">🎯</div>
+      <h3>Triple Barrier Method</h3>
+      <div class="tech-subtitle">Labeling Engine</div>
+      <p>Replaces naive endpoint returns with proper barrier-crossing labels. A trade is labeled WIN if price hits Take-Profit before Stop-Loss within the time window; LOSS if SL hits first; TIMEOUT otherwise.</p>
+      <div class="math-block">Label(t) = {
+  1 (WIN)   if ∃ τ ∈ [t, t+T] : P(τ) ≥ P(t) × (1 + TP)
+  0 (LOSS)  if ∃ τ ∈ [t, t+T] : P(τ) ≤ P(t) × (1 − SL)
+  skip      if neither barrier hit within T bars
+}
+TP = k₁ × ATR(t),  SL = k₂ × ATR(t)</div>
+      <div class="tech-ref">📚 López de Prado, "Advances in Financial ML" (2018), Ch. 3</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">📊</div>
+      <h3>Brier Score Calibration</h3>
+      <div class="tech-subtitle">Probability Quality Metric</div>
+      <p>Measures how well each specialist's predicted probabilities match actual outcomes. Used to dynamically reweight the ensemble — well-calibrated models get more influence.</p>
+      <div class="math-block">Brier = (1/N) Σᵢ (pᵢ − oᵢ)²
+
+where pᵢ = predicted probability
+      oᵢ = actual outcome (0 or 1)
+
+Perfect = 0.0  |  Random = 0.25  |  Worst = 1.0</div>
+      <div class="tech-ref">📚 Brier, G.W. "Verification of Forecasts" (1950), Monthly Weather Review</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">🎲</div>
+      <h3>Kelly Criterion</h3>
+      <div class="tech-subtitle">Position Sizing</div>
+      <p>Calculates the mathematically optimal fraction of capital to risk per trade, maximizing long-term geometric growth while preventing ruin. QUANTA uses Half-Kelly for safety.</p>
+      <div class="math-block">f* = p − (q / b)
+
+where p = win probability (from ensemble)
+      q = 1 − p (loss probability)
+      b = TP/SL ratio (reward-to-risk)
+
+Half-Kelly: risk% = 0.5 × f*
+Clamped to [0.3%, 2.5%] of equity</div>
+      <div class="tech-ref">📚 Kelly, J.L. "A New Interpretation of Information Rate" (1956), Bell System Technical Journal</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">🔀</div>
+      <h3>Hidden Markov Model (HMM)</h3>
+      <div class="tech-subtitle">Market Regime Detection</div>
+      <p>Unsupervised model detecting latent market states (Bull / Range / Bear) from returns, volatility, and trend strength. Optimal K found via BIC minimization. Routes predictions to regime-specialized agents.</p>
+      <div class="math-block">States: S = {s₁, ..., sₖ}  (K found via BIC)
+Observations: Xₜ = [log_return, ATR%, ADX]
+
+Transition: A[i,j] = P(sₜ₊₁=j | sₜ=i)
+Emission:   B[j](x) = N(x; μⱼ, Σⱼ)
+
+BIC(K) = −2·ln(L) + k·ln(n)
+Decode path: Viterbi algorithm</div>
+      <div class="tech-ref">📚 Baum-Welch (1970); BIC selection — Schwarz (1978)</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">🤖</div>
+      <h3>PPO Neural Network</h3>
+      <div class="tech-subtitle">Deep Reinforcement Learning Gate</div>
+      <p>Proximal Policy Optimization agent that learns to approve or veto trades based on historical outcomes. Uses clipped surrogate objective to prevent catastrophic policy updates.</p>
+      <div class="math-block">L_CLIP(θ) = E[min(
+  rₜ(θ)·Âₜ,
+  clip(rₜ(θ), 1−ε, 1+ε)·Âₜ
+)]
+
+rₜ(θ) = π_θ(aₜ|sₜ) / π_θold(aₜ|sₜ)
+ε = 0.2 (clip range)
+
+Reward: Differential Sharpe Ratio
+ΔSₜ = (Bₜ₋₁·Rₜ − Aₜ₋₁) / (Bₜ₋₁ − Aₜ₋₁²)^(3/2)</div>
+      <div class="tech-ref">📚 Schulman et al. "PPO Algorithms" (2017); Moody & Saffall (2001)</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">🌳</div>
+      <h3>CatBoost Gradient Boosting</h3>
+      <div class="tech-subtitle">Core Prediction Engine</div>
+      <p>Each Greek specialist is a CatBoost classifier with domain-specific feature masks. Uses ordered boosting to prevent target leakage and GPU acceleration for real-time inference.</p>
+      <div class="math-block">F(x) = Σₘ γₘ · hₘ(x)   (additive trees)
+
+Loss: Logloss = −[y·log(p) + (1−y)·log(1−p)]
+Regularization: L₂ leaf penalty (λ = 5.0)
+Sampling: Bernoulli subsample = 0.8
+
+7 specialists × 800–1500 iterations each
+GPU inference: ~5ms per prediction</div>
+      <div class="tech-ref">📚 Prokhorenkova et al. "CatBoost" (2018), NeurIPS</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">⚖️</div>
+      <h3>Entropy-Regularized Ensemble</h3>
+      <div class="tech-subtitle">Weight Optimization</div>
+      <p>Ensemble weights are optimized using a blend of Brier quality and validation AUC, with Shannon entropy regularization to prevent any single model from dominating.</p>
+      <div class="math-block">w* = argmax Σᵢ scoreᵢ·wᵢ + λ·H(w)
+
+H(w) = −Σᵢ wᵢ·ln(wᵢ)  (Shannon entropy)
+λ = 0.3 (regularization strength)
+
+Constraints:
+  wᵢ ∈ [0.05, 0.25]  (no single model > 25%)
+  Σ wᵢ = 1
+
+score = 0.4·AUC + 0.6·(1 − Brier)</div>
+      <div class="tech-ref">📚 Krogh & Vedelsby (1994); REPO — Markowitz + Shannon</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">📈</div>
+      <h3>VPIN Order Flow</h3>
+      <div class="tech-subtitle">Volume-Synchronized Probability of Informed Trading</div>
+      <p>Estimates the probability that current volume is driven by informed traders rather than noise. High VPIN precedes large moves and is used by flow-specialist agents.</p>
+      <div class="math-block">VPIN = Σ|V_buy − V_sell| / (n · V_bucket)
+
+Buy/Sell classification: Bulk Volume (BVC)
+V_buy = V · Φ(ΔP / σ_ΔP)
+V_sell = V − V_buy
+
+Alert threshold: VPIN > 2σ above rolling mean</div>
+      <div class="tech-ref">📚 Easley, López de Prado, O'Hara (2012), Journal of Portfolio Mgmt</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">🔢</div>
+      <h3>Fractional Differencing</h3>
+      <div class="tech-subtitle">Stationarity Preservation</div>
+      <p>Makes price series stationary while preserving long memory — unlike integer differencing which destroys predictive information. Used as features for mean-reversion detection.</p>
+      <div class="math-block">d ∈ (0, 1)  — fractional order
+
+(1−B)^d = Σₖ C(d,k)·(−B)^k
+
+C(d,k) = Γ(d+1) / [Γ(k+1)·Γ(d−k+1)]
+
+d ≈ 0.4: minimum d for ADF stationarity
+         while retaining 95%+ correlation</div>
+      <div class="tech-ref">📚 Hosking (1981); López de Prado (2018), Ch. 5</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">🧬</div>
+      <h3>Temporal Fusion Transformer (TFT)</h3>
+      <div class="tech-subtitle">Deep Learning Sequence Model</div>
+      <p>Attention-based neural network that processes multi-horizon temporal data. Uses variable selection networks to automatically identify the most relevant features per time step.</p>
+      <div class="math-block">Architecture:
+  Input → Variable Selection → LSTM Encoder
+  → Multi-Head Attention (4 heads)
+  → Gated Residual Network → Output
+
+Params: ~64 hidden, dropout=0.1
+Optimizer: Adam (lr=1e-3)
+Loss: BCE with logits</div>
+      <div class="tech-ref">📚 Lim et al. "Temporal Fusion Transformers" (2021), Int. J. Forecasting</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">🧊</div>
+      <h3>Hurst Exponent & Sample Entropy</h3>
+      <div class="tech-subtitle">Market Microstructure Analysis</div>
+      <p>Hurst exponent detects trending (H>0.5) vs mean-reverting (H&lt;0.5) behavior. Sample entropy measures market complexity — low entropy signals predictable regimes.</p>
+      <div class="math-block">Hurst (R/S method):
+  H = log(R/S) / log(n)
+  H > 0.5 → trending  |  H < 0.5 → mean-reverting
+
+Sample Entropy:
+  SampEn = −ln(A/B)
+  where A = template matches at m+1
+        B = template matches at m</div>
+      <div class="tech-ref">📚 Hurst (1951); Richman & Moorman (2000)</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">💰</div>
+      <h3>Kyle's Lambda & Amihud Illiquidity</h3>
+      <div class="tech-subtitle">Market Impact Estimation</div>
+      <p>Kyle's Lambda measures price impact per unit of volume — high λ means low liquidity. Amihud ratio captures absolute return per dollar of volume, identifying illiquid conditions where slippage is dangerous.</p>
+      <div class="math-block">Kyle's Lambda:
+  λ = Cov(ΔP, V) / Var(V)
+
+Amihud Illiquidity:
+  ILLIQ = (1/N) Σ |Rₜ| / Volumeₜ
+
+Both normalized to z-scores for feature input</div>
+      <div class="tech-ref">📚 Kyle (1985), Econometrica; Amihud (2002), J. Financial Markets</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">📉</div>
+      <h3>Black-Scholes Barrier Probability</h3>
+      <div class="tech-subtitle">Theoretical Win Rate Estimation</div>
+      <p>Adapted from options pricing theory, computes the theoretical probability that a barrier (TP/SL) will be hit given current volatility. Provides a model-free baseline for comparison with ML predictions.</p>
+      <div class="math-block">Kou Double-Exponential Barrier:
+  P(hit TP) ≈ exp(−2·μ·TP / σ²)
+
+BS Time Decay:
+  θ(t) = −S·σ·N'(d₁) / (2√T)
+
+Implied Vol Ratio:
+  IVR = σ_realized / σ_historical</div>
+      <div class="tech-ref">📚 Black & Scholes (1973); Kou (2002), Management Science</div>
+    </div>
+
+    <div class="tech-card">
+      <div class="tech-card-icon">🔄</div>
+      <h3>CPCV Walk-Forward Validation</h3>
+      <div class="tech-subtitle">Combinatorial Purged Cross-Validation</div>
+      <p>Prevents look-ahead bias in time-series by purging overlap between train/test sets and using combinatorial paths. Model registry gates deployment: only models that beat previous generation go live.</p>
+      <div class="math-block">For each fold k:
+  Train: data[0 : t_k − purge_window]
+  Test:  data[t_k : t_k+1]
+  Embargo: gap of h bars between sets
+
+Deploy gate:
+  AUC_new > AUC_prev − tolerance
+  Brier_new < 0.30 (max threshold)
+  Accuracy improvement > 1%</div>
+      <div class="tech-ref">📚 López de Prado (2018), Ch. 7 — "Cross-Validation in Finance"</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════ SYSTEM TAB ═══════════════════ -->
+<div id="tab-system" class="content panel">
+  <div class="grid grid-4 mb">
+    <div class="card">
+      <div class="card-title"><span class="icon">📦</span> Data Queue</div>
+      <div class="metric accent" id="queue-size">0</div>
+      <div class="metric-sub" id="queue-max">/ 0 max</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">⏱️</span> Avg Latency</div>
+      <div class="metric cyan" id="latency">—</div>
+      <div class="metric-label">ms per prediction</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">🔄</span> Throughput</div>
+      <div class="metric green" id="throughput">—</div>
+      <div class="metric-label">coins / minute</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">⏳</span> Uptime</div>
+      <div class="metric" id="uptime" style="color:var(--text-primary)">—</div>
+      <div class="metric-sub" id="total-processed">0 total processed</div>
+    </div>
+  </div>
+
+  <div class="grid grid-2 mb">
+    <div class="card">
+      <div class="card-title"><span class="icon">🛡️</span> Risk Events</div>
+      <div id="risk-events" style="max-height:300px;overflow-y:auto;">
+        <div class="table-empty">No risk events</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">📋</span> Runtime Log</div>
+      <div class="log-box" id="log-tail">Connecting...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ ZEUS.AI TAB (Replaced Settings) ═══════════════════ -->
+<div id="tab-settings" class="content panel">
+  <div class="section-title mb">⚡ ZEUS.ai LLM Supervisor Audit Trail</div>
+  <div class="tech-card mb" style="background:rgba(108, 92, 231, 0.05); border:1px solid var(--accent); padding:16px;">
+    <strong>Autonomous AI Adjustments:</strong> ZEUS uses Zhipu GLM-5-Turbo to mathematically supervise neural network training results. It parses the loss curves and adjusts PPO exploration gradients or stops specialist overfitting dynamically without any human intervention.
+  </div>
+  <div id="settings-container" class="grid grid-2">
+    <!-- UI will be dynamically generated by JS -->
+    Loading latest LLM instructions...
+  </div>
+</div>
+
+<!-- ═══════════════════ JAVASCRIPT ═══════════════════ -->
+<script>
+const AGENT_ICONS = {
+  athena: '🦉', ares: '⚔️', hermes: '🏃', artemis: '🏹',
+  chronos: '⏳', hephaestus: '🔨', nike: '🏆'
+};
+
+const AGENT_DETAILS = {
+  athena: {
+    role: 'Trend Rider',
+    domain: 'Trend-core features: RSI, MACD, ADX across 7 timeframes + cross-TF consensus + momentum confluence + drift detection + multi-TF returns + BS barrier probability.',
+    math: `CatBoost ensemble prediction (trend domain):\n\nP(bullish) = σ(F(x_trend))\nF(x) = Σₘ γₘ · hₘ(x_masked)\n\nFeature mask: 100+ trend indicators\nCross-TF consensus: Σ(bull_tf) / 7\nMomentum confirmation: MACD_bull% > 0.6`,
+    ref: 'Wilder (1978) — RSI; Appel (1979) — MACD'
+  },
+  ares: {
+    role: 'Trend Crusher',
+    domain: 'Same trend domain as Athena but trained exclusively on bearish labels — specialized in detecting weak bounces in bleeding downtrends.',
+    math: `Bearish Triple Barrier:\n\nLabel = 1 if price drops SL×ATR before recovering\nTP_short = k₁ × ATR (downside target)\nSL_short = k₂ × ATR (upside stop)\n\nClass balancing: auto_class_weights\nMinority boost: up to 77× weight`,
+    ref: 'López de Prado (2018) — Bearish barrier labeling'
+  },
+  hermes: {
+    role: 'Range Navigator',
+    domain: 'Mean-reversion features: RSI extremes, Bollinger Band width, ADX, ATR, HMM regime, Hurst exponent, sample entropy, BS barrier probability.',
+    math: `Mean Reversion Signal:\n\nBuy when RSI < 30 AND BB_position < 0.2\nSell when RSI > 70 AND BB_position > 0.8\n\nHurst exponent H < 0.5 confirms mean-reversion\nSampEn low = predictable regime\nHMM regime = 1 (ranging) → weight boost`,
+    ref: 'Bollinger (2001); Hurst (1951)'
+  },
+  hephaestus: {
+    role: 'Structural Forger',
+    domain: 'Structural features: Full indicator suite across TFs + ATR/ADX/BB analysis + strength progression + regime detection + drift + advanced research + all 3 BS barrier features.',
+    math: `Structural Bounce Detection:\n\nSupport = local_min(close, window=20)\nResistance = local_max(close, window=20)\n\nBounce signal:\n  price within 0.5×ATR of support\n  AND ADX < 25 (weak trend = structure holds)\n  AND volume_ratio > 1.5 (accumulation)`,
+    ref: 'Ho (1998) — Random Subspace; Kuncheva (2004)'
+  },
+  nike: {
+    role: 'Impulse Rider',
+    domain: 'Impulse features: ATR + RSI + MACD + BB per-TF, volume ratios, VPIN, fractional diff, taker imbalance, order book depth, Kyle\'s Lambda, delta features, impulse continuation features.',
+    math: `Impulse Continuation vs Death:\n\nImpulse = |close - open| > 2 × ATR\nContinuation probability:\n  P(cont) = f(VPIN, taker_imbalance, OB_depth)\n\nKyle's λ = Cov(ΔP, V) / Var(V)\nHigh λ → thin book → impulse continues\nOB imbalance > 0.6 → continuation signal`,
+    ref: 'Kyle (1985); Easley et al. (2012)'
+  },
+  artemis: {
+    role: 'Stealth Accumulator',
+    domain: 'Volatility-breakout features: ATR, BB, ADX, spike-dump-reversal (20 features), enhanced volatility, VPIN, order book, HMM regime, BS barrier features.',
+    math: `Hidden Volume Detection:\n\nStealth accumulation signal:\n  volume_z > 2σ but |ΔP| < 0.5 × ATR\n  (big volume, small price move = absorption)\n\nSpike detection: Δclose > 3 × ATR_14\nDump detection: Δclose < -3 × ATR_14\nReversal: spike → dump within 3 bars`,
+    ref: 'Wyckoff (1937) — Accumulation/Distribution'
+  },
+  chronos: {
+    role: 'Deep Reversal',
+    domain: 'Macro-sentiment features: cross-TF consensus, market regime, time/session features, drift detection, HMM regime, sentiment (Fear & Greed), futures X-Ray, stat arb.',
+    math: `V-Shape Reversal Detection:\n\nRSI extreme: RSI_1h < 20 (deeply oversold)\nFear & Greed < 25 (extreme fear)\nFunding rate < -0.01% (shorts overcrowded)\n\nRecency boost: 5.0× (latest data weighted)\nSentiment features: FG index, social_score,\n  news_sentiment, funding_velocity`,
+    ref: 'Moody & Saffell (2001) — DSR reward shaping'
+  }
+};
+
+let _cachedSpecialists = [];
+let _cachedBrier = {};
+
+let equityChart, outcomeChart;
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  const tabs = ['overview','predictions','models','system','settings','tech'];
+  const idx = tabs.indexOf(name);
+  if (idx !== -1) {
+      document.querySelectorAll('.tab')[idx].classList.add('active');
+  }
+  document.getElementById('tab-' + name).classList.add('active');
+  
+  if (name === 'settings') {
+      loadSettings();
+  }
+}
+
+let currentSettings = {};
+
+async function loadSettings() {
+  try {
+    const r = await fetch('/api/settings');
+    if (!r.ok) throw new Error("Failed to fetch settings");
+    currentSettings = await r.json();
+    renderSettingsState();
+  } catch (err) {
+    console.error(err);
+    document.getElementById('settings-container').innerHTML = '<div style="color:var(--red);">Failed to load settings. Check bot connection.</div>';
+  }
+}
+
+function renderSettingsState() {
+  // Now rendering ZEUS logs instead of settings
+  const container = document.getElementById('settings-container');
+  if (!currentSettings || currentSettings.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-style:italic">No AI adjustments recorded yet. ZEUS will scan after the next training cycle completes.</div>';
+    return;
+  }
+  
+  let html = '';
+  // currentSettings contains the array of zeus logs initialized from system api
+  currentSettings.forEach((log, index) => {
+      const stamp = new Date(log.timestamp).toLocaleString();
+      let overridesHtml = '';
+      if (log.overrides) {
+         if (log.overrides.PPO) {
+             overridesHtml += `<div class="math-block" style="color:var(--green)">[PPO] Lr: ${log.overrides.PPO.lr}, Entropy: ${log.overrides.PPO.entropy}, Clip: ${log.overrides.PPO.clip}</div>`;
+         }
+         if (log.overrides.specialists) {
+             for (const [sName, sArgs] of Object.entries(log.overrides.specialists)) {
+                 overridesHtml += `<div class="math-block" style="color:var(--cyan)">[${sName}] Lr: ${sArgs.learning_rate}, Depth: ${sArgs.depth}, Iters: ${sArgs.iterations}</div>`;
+             }
+         }
+      }
+      
+      html += `
+        <div class="card">
+          <div class="card-title" style="display:flex; justify-content:space-between; border-bottom:1px solid var(--border); padding-bottom:8px;">
+             <span><span class="icon">🤖</span> AI Engine: ${log.model}</span>
+             <span style="font-size:11px; color:var(--text-muted); font-family:var(--mono);">${stamp}</span>
+          </div>
+          <div style="margin-top:12px;">
+             <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px;">Event Trigger: <strong>${log.input_summary}</strong></div>
+             ${overridesHtml}
+          </div>
+        </div>
+      `;
+  });
+  
+  container.innerHTML = html;
+}
+
+async function saveSettings() {
+  const inputs = document.querySelectorAll('#settings-container input');
+  const payload = {};
+  
+  inputs.forEach(inp => {
+    const cat = inp.getAttribute('data-category');
+    const key = inp.getAttribute('data-key');
+    let val = inp.value;
+    
+    // basic type coercion back to float/int/bool
+    if (!isNaN(val) && val.trim() !== '') {
+        val = val.includes('.') ? parseFloat(val) : parseInt(val);
+    } else if (val.toLowerCase() === 'true') {
+        val = true;
+    } else if (val.toLowerCase() === 'false') {
+        val = false;
+    }
+    
+    if (!payload[cat]) payload[cat] = {};
+    payload[cat][key] = val;
+  });
+  
+  try {
+    const r = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    if (r.ok) {
+      alert("Settings successfully saved to hardware override file! Changes that modify infrastructure may require a main.py restart.");
+    } else {
+      alert("Server rejected the new settings format.");
+    }
+  } catch(err) {
+    alert("Connection error sending settings.");
+  }
+}
+
+function fmt(n, prefix='') {
+  if (n === null || n === undefined) return '—';
+  const sign = n >= 0 ? '+' : '';
+  return prefix + sign + n.toFixed(2);
+}
+
+function fmtPrice(n) {
+  if (!n) return '—';
+  if (n >= 1) return '$' + n.toFixed(2);
+  if (n >= 0.01) return '$' + n.toFixed(4);
+  return '$' + n.toFixed(6);
+}
+
+function initCharts() {
+  const commonOpts = {
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: {
+        ticks: { color: '#5a6380', maxTicksLimit: 8, font: { family: 'Inter', size: 10 } },
+        grid: { color: 'rgba(255,255,255,0.03)', drawBorder: false }
+      },
+      y: {
+        ticks: { color: '#5a6380', font: { family: 'Inter', size: 10 } },
+        grid: { color: 'rgba(255,255,255,0.03)', drawBorder: false }
+      }
+    }
+  };
+
+  equityChart = new Chart(document.getElementById('equityChart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        borderColor: '#6c5ce7',
+        backgroundColor: 'rgba(108, 92, 231, 0.08)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+        borderWidth: 2,
+      }]
+    },
+    options: commonOpts
+  });
+
+  outcomeChart = new Chart(document.getElementById('outcomeChart'), {
+    type: 'bar',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: [] }] },
+    options: commonOpts
+  });
+}
+
+let _posView = 'active';
+let _activePositions = [];
+let _historyPositions = [];
+
+function togglePosView(view) {
+  _posView = view;
+  document.getElementById('toggle-active').classList.toggle('active', view === 'active');
+  document.getElementById('toggle-history').classList.toggle('active', view === 'history');
+  
+  // Update header text
+  document.getElementById('pos-card-header').textContent = view === 'active' ? 'Active Positions' : 'Trade History';
+  
+  renderPositionsTable();
+}
+
+function renderPositionsTable() {
+  const body = document.getElementById('positions-body');
+  const head = document.querySelector('#positions-body').parentElement.querySelector('thead tr');
+  const data = _posView === 'active' ? _activePositions : _historyPositions;
+  
+  // Update Header based on view
+  if (_posView === 'active') {
+    head.innerHTML = '<th>Symbol</th><th>Direction</th><th>Entry</th><th>Size</th><th>Conf</th>';
+  } else {
+    head.innerHTML = '<th>Symbol</th><th>Direction</th><th>Entry</th><th>Exit</th><th>Result</th>';
+  }
+
+  if (data.length === 0) {
+    const cols = _posView === 'active' ? 5 : 5;
+    body.innerHTML = `<tr><td colspan="${cols}" class="table-empty">No ${_posView} trades found</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = data.map(p => {
+    const dirTag = p.direction === 'BULLISH' ? 'bull' : 'bear';
+    const dirLabel = p.direction === 'BULLISH' ? '▲ LONG' : '▼ SHORT';
+    
+    if (_posView === 'active') {
+      const safeP = encodeURIComponent(JSON.stringify(p));
+      return `<tr class="clickable" onclick="openPositionModal(decodeURIComponent('${safeP}'))">
+        <td><b>${p.symbol}</b></td>
+        <td><span class="tag ${dirTag}">${dirLabel}</span></td>
+        <td>${fmtPrice(p.entry)}</td>
+        <td style="font-family:var(--mono);font-size:12px">${fmtPrice(p.size_usd || 0)}</td>
+        <td>${(p.confidence||0).toFixed(1)}%</td>
+      </tr>`;
+    } else {
+      // History view
+      const pnl = p.pnl_pct || 0;
+      const hit = p.barrier_hit || 'TIMEOUT';
+      const hitClass = hit.includes('TP') ? 'tp' : (hit.includes('SL') ? 'sl' : '');
+      const hitLabel = hit.includes('TP') ? hit + ' ✓' : (hit.includes('SL') ? hit + ' ✕' : hit);
+      
+      return `<tr>
+        <td><b>${p.symbol}</b></td>
+        <td><span class="tag ${dirTag}">${dirLabel}</span></td>
+        <td>${fmtPrice(p.entry_price || p.entry)}</td>
+        <td>${fmtPrice(p.exit_price)}</td>
+        <td>
+          <div style="display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
+            <span class="res-badge ${hitClass}">${hitLabel}</span>
+            <span style="font-size:10px; font-weight:700; color:${pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%</span>
+          </div>
+        </td>
+      </tr>`;
+    }
+  }).join('');
+}
+
+async function fetchAndUpdate() {
+  // ─── OVERVIEW ─────────────────
+  try {
+    const r = await fetch('/api/overview');
+    if (!r.ok) return;
+    const d = await r.json();
+
+    // Status indicator
+    const dot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    if (d.is_training) {
+      dot.className = 'status-dot training';
+      statusText.textContent = 'Training...';
+    } else if (d.status === 'online') {
+      dot.className = 'status-dot';
+      statusText.textContent = 'Live';
+    } else {
+      dot.className = 'status-dot offline';
+      statusText.textContent = 'Offline';
+    }
+
+    // KPI Cards
+    document.getElementById('balance').textContent = '$' + (d.balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    const pnl = d.total_pnl || 0;
+    const pnlEl = document.getElementById('pnl');
+    pnlEl.textContent = fmt(pnl, '$');
+    pnlEl.className = 'metric ' + (pnl >= 0 ? 'green' : 'red');
+    document.getElementById('pnl-pct').textContent = (d.pnl_pct || 0).toFixed(2) + '%';
+
+    const wr = d.trade_win_rate;
+    const wrEl = document.getElementById('win-rate');
+    wrEl.textContent = wr !== undefined && wr !== null ? wr.toFixed(1) + '%' : '—';
+
+    document.getElementById('win-sub').textContent = `${d.total_wins||0}W / ${d.total_losses||0}L (${d.total_trades||0})`;
+
+    _activePositions = d.active_positions || [];
+    _historyPositions = d.trade_history || [];
+    
+    document.getElementById('open-pos').textContent = _activePositions.length;
+    document.getElementById('pos-sub').textContent = _activePositions.length === 1 ? '1 active trade' : _activePositions.length + ' active trades';
+
+    // Update positions table
+    renderPositionsTable();
+
+    // Fear & Greed
+    if (d.fear_greed) {
+      document.getElementById('fg-value').textContent = d.fear_greed.value || '?';
+      document.getElementById('fg-label').textContent = d.fear_greed.label || '?';
+    }
+
+    // RL Stats
+    if (d.rl_stats) {
+      document.getElementById('rl-buffer').textContent = d.rl_stats.buffer_size || '0';
+      document.getElementById('rl-total').textContent = d.rl_stats.total_resolved || d.total_predictions || '0';
+      document.getElementById('rl-pending').textContent = d.pending_opportunities || '0';
+    }
+
+    // Risk Status
+    if (d.risk_status) {
+      const rp = document.getElementById('risk-paused');
+      rp.textContent = d.risk_status.trading_paused ? '⛔ PAUSED' : '✅ Active';
+      rp.style.color = d.risk_status.trading_paused ? 'var(--red)' : 'var(--green)';
+
+      const dpnl = d.risk_status.daily_pnl || 0;
+      const dpEl = document.getElementById('risk-daily-pnl');
+      dpEl.textContent = fmt(dpnl, '$');
+      dpEl.style.color = dpnl >= 0 ? 'var(--green)' : 'var(--red)';
+
+      document.getElementById('risk-streak').textContent = d.risk_status.consecutive_losses || 0;
+    }
+
+    // Equity chart
+    if (d.equity_curve && d.equity_curve.length > 0) {
+      equityChart.data.labels = d.equity_curve.map(() => '');
+      equityChart.data.datasets[0].data = d.equity_curve.map(p => p.v);
+      equityChart.update('none');
+    }
+
+    // Positions table
+    const posBody = document.getElementById('positions-body');
+    if (positions.length === 0) {
+      posBody.innerHTML = '<tr><td colspan="5" class="table-empty">No open positions</td></tr>';
+    } else {
+      posBody.innerHTML = positions.map(p => {
+        const dirTag = p.direction === 'BULLISH' ? 'bull' : 'bear';
+        const dirLabel = p.direction === 'BULLISH' ? '▲ LONG' : '▼ SHORT';
+        const safeP = encodeURIComponent(JSON.stringify(p));
+        return `<tr class="clickable" onclick="openPositionModal(decodeURIComponent('${safeP}'))">
+          <td><b>${p.symbol}</b></td>
+          <td><span class="tag ${dirTag}">${dirLabel}</span></td>
+          <td>${fmtPrice(p.entry)}</td>
+          <td style="font-family:var(--mono);font-size:12px">${fmtPrice(p.size_usd || 0)}</td>
+          <td>${(p.confidence||0).toFixed(1)}%</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Drift alerts
+    const dc = document.getElementById('drift-alerts-container');
+    if (d.drift_alerts && d.drift_alerts.length > 0) {
+      dc.style.display = 'block';
+      dc.innerHTML = d.drift_alerts.map(a => `<div class="drift-alert">⚠️ ${a.msg}</div>`).join('');
+    } else {
+      dc.style.display = 'none';
+    }
+
+    // Uptime
+    document.getElementById('uptime').textContent = d.uptime || '—';
+
+  } catch(e) { console.error('overview error', e); }
+
+  // ─── PREDICTIONS ─────────────────
+  try {
+    const r = await fetch('/api/predictions');
+    if (!r.ok) return;
+    const d = await r.json();
+
+    // Daily picks / alerts
+    const picks = d.daily_picks || [];
+    const body = document.getElementById('preds-body');
+    if (picks.length === 0) {
+      body.innerHTML = '<tr><td colspan="6" class="table-empty">Waiting for predictions...</td></tr>';
+    } else {
+      body.innerHTML = picks.slice(0, 25).map(p => {
+        const dirTag = p.direction === 'BULLISH' ? 'bull' : (p.direction === 'BEARISH' ? 'bear' : 'neutral');
+        const t = p.timestamp ? new Date(p.timestamp * 1000).toLocaleTimeString() : '—';
+        const statusTag = p.status === 'HIT_TP' ? 'bull' : (p.status === 'HIT_SL' ? 'bear' : 'accent');
+        
+        let safeP = {
+           symbol: p.symbol, direction: p.direction,
+           specialist_probs: p.specialist_probs || [],
+           ppo_action: p.ppo_action, ppo_size_mult: p.ppo_size_mult,
+           shap_summary: p.shap_summary
+        };
+        const pStr = encodeURIComponent(JSON.stringify(safeP));
+
+        return `<tr class="clickable" onclick="openThoughtModal(decodeURIComponent('${pStr}'))">
+          <td style="font-family:var(--mono);font-size:11px;color:var(--text-muted)">${t}</td>
+          <td><b>${p.symbol}</b></td>
+          <td><span class="tag ${dirTag}">${p.direction}</span></td>
+          <td>${(p.confidence || 0).toFixed(1)}%</td>
+          <td><span class="tag ${statusTag}">${p.status || 'PENDING'}</span></td>
+          <td style="font-family:var(--mono)">${p.entry_price ? fmtPrice(p.entry_price) : '—'}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // RL Outcomes
+    const outcomes = d.recent_predictions || [];
+    const oBody = document.getElementById('outcomes-body');
+    if (outcomes.length === 0) {
+      oBody.innerHTML = '<tr><td colspan="5" class="table-empty">Waiting for outcomes (need 1h)...</td></tr>';
+    } else {
+      oBody.innerHTML = outcomes.slice(0, 20).map(p => {
+        const dirTag = p.direction === 'BULLISH' ? 'bull' : 'bear';
+        const outcomeTag = p.outcome === 'correct' ? 'bull' : 'bear';
+        return `<tr>
+          <td><b>${p.symbol}</b></td>
+          <td><span class="tag ${dirTag}">${p.direction}</span></td>
+          <td>${(p.confidence || 0).toFixed(1)}%</td>
+          <td><span class="tag ${outcomeTag}">${p.outcome === 'correct' ? '✅ WIN' : '❌ LOSS'}</span></td>
+          <td style="font-family:var(--mono)">${(p.actual_move || 0).toFixed(2)}%</td>
+        </tr>`;
+      }).join('');
+
+      // Update outcome chart
+      const wins = outcomes.filter(o => o.outcome === 'correct').length;
+      const losses = outcomes.filter(o => o.outcome === 'wrong').length;
+      outcomeChart.data.labels = ['Wins', 'Losses'];
+      outcomeChart.data.datasets[0].data = [wins, losses];
+      outcomeChart.data.datasets[0].backgroundColor = ['rgba(0,230,118,0.6)', 'rgba(255,82,82,0.6)'];
+      outcomeChart.update('none');
+    }
+
+  } catch(e) { console.error('predictions error', e); }
+
+  // ─── MODELS ─────────────────
+  try {
+    const r = await fetch('/api/models');
+    if (!r.ok) return;
+    const d = await r.json();
+    const specialists = d.specialists || [];
+    const brierScores = d.brier_scores || {};
+
+    document.getElementById('model-gen').textContent = d.generation || 0;
+
+    // Agent cards — CLICKABLE
+    const grid = document.getElementById('agents-grid');
+    _cachedSpecialists = specialists;
+    _cachedBrier = brierScores;
+    grid.innerHTML = specialists.map(s => {
+      const icon = AGENT_ICONS[s.name] || '🤖';
+      const bs = brierScores[s.name] || {};
+      const brierVal = bs.rolling_avg !== null && bs.rolling_avg !== undefined ? bs.rolling_avg.toFixed(4) : '—';
+      const statusTag = s.has_model ? '<span class="tag ready">ready</span>' : '<span class="tag offline">no model</span>';
+      const details = AGENT_DETAILS[s.name] || {};
+      return `<div class="agent-card clickable" onclick="openAgentModal('${s.name}')">
+        <div class="agent-header">
+          <div class="agent-avatar">${icon}</div>
+          <div>
+            <div class="agent-name">${s.name}</div>
+            ${statusTag}
+          </div>
+        </div>
+        <div class="agent-desc">${s.description || ''}</div>
+        <div class="agent-stats">
+          <div class="agent-stat">
+            <div class="agent-stat-label">Gen</div>
+            <div class="agent-stat-value">${s.generation || 0}</div>
+          </div>
+          <div class="agent-stat">
+            <div class="agent-stat-label">Weight</div>
+            <div class="agent-stat-value" style="color:var(--accent-2)">${((s.weight||0)*100).toFixed(1)}%</div>
+          </div>
+          <div class="agent-stat">
+            <div class="agent-stat-label">Brier</div>
+            <div class="agent-stat-value">${brierVal}</div>
+          </div>
+          <div class="agent-stat">
+            <div class="agent-stat-label">Mask</div>
+            <div class="agent-stat-value" style="font-size:10px;color:var(--text-muted)">${(s.feature_mask || '—').replace('domain_', '')}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Brier bars
+    const barsEl = document.getElementById('brier-bars');
+    barsEl.innerHTML = specialists.map(s => {
+      const bs = brierScores[s.name] || {};
+      const b = bs.rolling_avg || 0.25;
+      const pct = Math.min(100, (b / 0.25) * 100);
+      const col = b < 0.15 ? 'var(--green)' : b < 0.20 ? 'var(--yellow)' : 'var(--red)';
+      return `<div class="brier-row">
+        <div class="brier-name">${AGENT_ICONS[s.name] || '🤖'} ${s.name}</div>
+        <div class="brier-bar-bg"><div class="brier-bar-fill" style="width:${pct}%;background:${col}"></div></div>
+        <div class="brier-value">${b.toFixed(4)}</div>
+      </div>`;
+    }).join('');
+
+    // Monitor stats
+    if (d.monitor_stats) {
+      const ms = d.monitor_stats;
+      document.getElementById('mon-accuracy').textContent = ms.rolling_accuracy !== null && ms.rolling_accuracy !== undefined ? ms.rolling_accuracy.toFixed(1) + '%' : '—';
+      document.getElementById('mon-ece').textContent = ms.calibration_error !== null && ms.calibration_error !== undefined ? ms.calibration_error.toFixed(4) : '—';
+      document.getElementById('mon-drift').textContent = ms.feature_drift_score !== undefined ? ms.feature_drift_score.toFixed(2) : '—';
+      document.getElementById('mon-total').textContent = ms.total_predictions || '0';
+    }
+
+  } catch(e) { console.error('models error', e); }
+
+  // ─── SYSTEM ─────────────────
+  try {
+    const r = await fetch('/api/system');
+    if (!r.ok) return;
+    const d = await r.json();
+
+    document.getElementById('queue-size').textContent = d.queue_depth ?? 0;
+    document.getElementById('queue-max').textContent = '/ ' + (d.queue_max || 0) + ' max';
+    document.getElementById('latency').textContent = (d.avg_compute_ms !== undefined && d.avg_compute_ms !== null) ? d.avg_compute_ms.toFixed(1) + 'ms' : '—';
+    document.getElementById('throughput').textContent = (d.coins_per_min !== undefined && d.coins_per_min !== null) ? d.coins_per_min.toFixed(1) : '—';
+    document.getElementById('total-processed').textContent = ((d.total_processed || 0) + (d.total_predictions || 0)).toLocaleString() + ' total processed';
+
+    // Risk events
+    const re = d.risk_events || [];
+    const reEl = document.getElementById('risk-events');
+    if (re.length === 0) {
+      reEl.innerHTML = '<div class="table-empty">No recent risk events</div>';
+    } else {
+      reEl.innerHTML = re.slice(0, 15).map(e => {
+        const t = e.time ? new Date(e.time * 1000).toLocaleTimeString() : '';
+        return `<div class="risk-event">
+          <span class="re-type">${e.type || '?'}</span>
+          <span class="re-detail">${e.details || ''}</span>
+          <span style="color:var(--text-muted);font-size:11px;font-family:var(--mono)">${t}</span>
+        </div>`;
+      }).join('');
+    }
+
+    // Log
+    const logEl = document.getElementById('log-tail');
+    logEl.textContent = (d.log_lines || []).join('\n') || 'No log data';
+    logEl.scrollTop = logEl.scrollHeight;
+
+    // ZEUS LLM Data Push (hijacks settings variable)
+    if (d.zeus_logs) {
+        currentSettings = d.zeus_logs;
+        if (document.getElementById('tab-settings').classList.contains('active')) {
+             renderSettingsState();
+        }
+    }
+
+  } catch(e) { console.error('system error', e); }
+}
+
+// Clock
+setInterval(() => {
+  document.getElementById('live-clock').textContent = new Date().toLocaleTimeString();
+}, 1000);
+
+initCharts();
+fetchAndUpdate();
+setInterval(fetchAndUpdate, 5000);
+
+// ═══════════════════ AGENT MODAL ═══════════════════
+function openAgentModal(name) {
+  const s = _cachedSpecialists.find(x => x.name === name);
+  const details = AGENT_DETAILS[name] || {};
+  const bs = _cachedBrier[name] || {};
+  const icon = AGENT_ICONS[name] || '🤖';
+
+  document.getElementById('modal-avatar').textContent = icon;
+  document.getElementById('modal-name').textContent = name;
+  document.getElementById('modal-role').textContent = details.role || '';
+  document.getElementById('modal-desc').textContent = s ? s.description : '';
+  document.getElementById('modal-domain').textContent = details.domain || 'N/A';
+
+  // Stats
+  const brierVal = bs.rolling_avg != null ? bs.rolling_avg.toFixed(4) : '—';
+  const brierColor = (bs.rolling_avg || 0.25) < 0.15 ? 'var(--green)' : (bs.rolling_avg || 0.25) < 0.20 ? 'var(--yellow)' : 'var(--red)';
+  document.getElementById('modal-stats').innerHTML = `
+    <div class="modal-stat"><div class="label">Generation</div><div class="val" style="color:var(--accent-2)">${s ? s.generation : 0}</div></div>
+    <div class="modal-stat"><div class="label">Ensemble Weight</div><div class="val" style="color:var(--accent-2)">${s ? ((s.weight||0)*100).toFixed(1)+'%' : '—'}</div></div>
+    <div class="modal-stat"><div class="label">Brier Score</div><div class="val" style="color:${brierColor}">${brierVal}</div></div>
+    <div class="modal-stat"><div class="label">Recency Boost</div><div class="val">${s ? (s.recency_boost||1).toFixed(1)+'×' : '—'}</div></div>
+  `;
+
+  // Math
+  document.getElementById('modal-math').innerHTML = details.math
+    ? `<div class="math-block">${details.math}</div><div style="font-size:10px;color:var(--text-muted);margin-top:6px;font-style:italic">📚 ${details.ref || ''}</div>`
+    : '<p style="color:var(--text-muted)">No math details available</p>';
+
+  // Hyperparams
+  if (s && s.hyperparams) {
+    const hp = typeof s.hyperparams === 'object' ? s.hyperparams : {};
+    document.getElementById('modal-hyperparams').innerHTML = `<div class="math-block">${Object.entries(hp).map(([k,v]) => `${k}: ${v}`).join('\n')}</div>`;
+  } else {
+    document.getElementById('modal-hyperparams').innerHTML = '<p style="color:var(--text-muted)">Not available</p>';
+  }
+
+  document.getElementById('agent-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('agent-modal').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => { 
+  if (e.key === 'Escape') {
+    closeModal();
+    closeThoughtModal();
+  }
+});
+
+// ═══════════════════ THOUGHT PROCESS MODAL ═══════════════════
+function openThoughtModal(payloadStr) {
+  let p = JSON.parse(payloadStr);
+
+  document.getElementById('thought-symbol').textContent = p.symbol;
+  document.getElementById('thought-dir').textContent = p.direction;
+  document.getElementById('thought-dir').className = 'tag ' + (p.direction === 'BULLISH' ? 'green' : 'red');
+
+  let actionText = 'Approved ✅';
+  if (p.ppo_action === 0) actionText = 'Vetoed ❌';
+  if (p.ppo_action === undefined || p.ppo_action === null) actionText = 'N/A';
+  
+  document.getElementById('thought-ppo-action').textContent = actionText;
+  document.getElementById('thought-ppo-size').textContent = (p.ppo_size_mult !== undefined) ? p.ppo_size_mult.toFixed(2) + '×' : 'N/A';
+
+  let specialistsHtml = '';
+  if (p.specialist_probs && p.specialist_probs.length === 7) {
+    const names = ['Athena (Trend)', 'Ares (Crush)', 'Hermes (Range)', 'Hephaestus (Struct)', 'Nike (Impulse)', 'Artemis (Stealth)', 'Chronos (Rev)'];
+    for(let i=0; i<7; i++) {
+        let prob = p.specialist_probs[i];
+        let pct = (prob*100).toFixed(1);
+        let barColor = prob > 0.5 ? 'var(--green)' : 'var(--red)';
+        let fillWidth = prob > 0.5 ? ((prob-0.5)*200) : ((0.5-prob)*200); // 0-100% of half
+        fillWidth = Math.min(100, Math.max(0, fillWidth));
+        
+        let trackBg = 'rgba(255,255,255,0.05)';
+        
+        let barHtml = "";
+        if (prob >= 0.5) {
+            // bull: draw from center to right
+            barHtml = `<div style="flex:1; background:${trackBg}; border-radius:4px; height:8px; display:flex; align-items:center; overflow:hidden;">
+               <div style="width:50%;"></div>
+               <div style="width:50%; display:flex; justify-content:flex-start;">
+                 <div style="height:100%; width:${fillWidth}%; background:${barColor};"></div>
+               </div>
+            </div>`;
+        } else {
+            // bear: draw from center to left
+            barHtml = `<div style="flex:1; background:${trackBg}; border-radius:4px; height:8px; display:flex; align-items:center; overflow:hidden;">
+               <div style="width:50%; display:flex; justify-content:flex-end;">
+                 <div style="height:100%; width:${fillWidth}%; background:${barColor};"></div>
+               </div>
+               <div style="width:50%;"></div>
+            </div>`;
+        }
+
+        specialistsHtml += `
+          <div style="margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px; color:var(--text-secondary);">
+              <span>${names[i]}</span>
+              <span>${pct}% (Bull)</span>
+            </div>
+            ${barHtml}
+          </div>
+        `;
+    }
+  } else {
+    specialistsHtml = '<p style="color:var(--text-muted);font-size:12px;">Specialist vote breakdown not available for this record.</p>';
+  }
+  document.getElementById('thought-specialists').innerHTML = specialistsHtml;
+
+  if (p.shap_summary) {
+    document.getElementById('thought-shap').textContent = p.shap_summary;
+    document.getElementById('thought-shap-sec').style.display = 'block';
+  } else {
+    document.getElementById('thought-shap-sec').style.display = 'none';
+  }
+
+  document.getElementById('thought-modal').classList.add('open');
+}
+
+function closeThoughtModal() {
+  document.getElementById('thought-modal').classList.remove('open');
+}
+// Position Modal Handler
+function openPositionModal(dataStr) {
+  const p = JSON.parse(dataStr);
+  const m = document.getElementById('pos-modal');
+  
+  const dirTag = p.direction === 'BULLISH' ? 'bull' : 'bear';
+  const sizeUsd = typeof p.size_usd === 'number' ? fmtPrice(p.size_usd) : '—';
+  const tokens = typeof p.size === 'number' ? p.size.toFixed(4) : '—';
+  
+  document.getElementById('pos-modal-sym').textContent = p.symbol;
+  document.getElementById('pos-modal-dir').innerHTML = `<span class="tag ${dirTag}">${p.direction}</span>`;
+  document.getElementById('pos-modal-entry').textContent = fmtPrice(p.entry);
+  document.getElementById('pos-modal-market').textContent = p.current_price ? fmtPrice(p.current_price) : 'Fetching...';
+  document.getElementById('pos-modal-size').textContent = `${sizeUsd} (${tokens} units)`;
+  document.getElementById('pos-modal-conf').textContent = (p.confidence||0).toFixed(1) + '%';
+  
+  document.getElementById('pos-modal-tp1').textContent = p.tp1 ? fmtPrice(p.tp1) : '—';
+  document.getElementById('pos-modal-tp2').textContent = p.tp2 ? fmtPrice(p.tp2) : '—';
+  document.getElementById('pos-modal-tp3').textContent = p.tp3 ? fmtPrice(p.tp3) : '—';
+  document.getElementById('pos-modal-sl').textContent = p.stop_loss ? fmtPrice(p.stop_loss) : '—';
+
+  // ─── Barrier Hit & Distance Logic ─────────────────
+  const cp = p.current_price || 0;
+  const isBull = p.direction === 'BULLISH';
+  
+  const updateIndicator = (id, targetVal, isTp) => {
+    const el = document.getElementById(id).parentElement;
+    let icon = el.querySelector('.barrier-hit-icon');
+    if (!icon) {
+        icon = document.createElement('div');
+        icon.className = 'barrier-hit-icon';
+        el.appendChild(icon);
+    }
+
+    let distHtml = '';
+    if (targetVal && cp > 0) {
+        const diff = isTp ? (targetVal - cp) : (cp - targetVal);
+        const distPct = (diff / cp) * 100;
+        const reached = isTp ? (isBull ? cp >= targetVal : cp <= targetVal) : (isBull ? cp <= targetVal : cp >= targetVal);
+        
+        if (reached) {
+            icon.className = 'barrier-hit-icon hit' + (isTp ? '' : ' sl');
+            icon.innerHTML = isTp ? '✓' : '✕';
+            el.style.borderColor = isTp ? 'rgba(0,255,150,0.3)' : 'rgba(255,82,82,0.3)';
+            el.style.background = isTp ? 'rgba(0,255,150,0.05)' : 'rgba(255,82,82,0.05)';
+            distHtml = `<div class="dist-tag" style="color:var(--green)">REACHED</div>`;
+        } else {
+            icon.className = 'barrier-hit-icon';
+            icon.innerHTML = '';
+            el.style.borderColor = 'var(--border)';
+            el.style.background = 'rgba(255,255,255,0.02)';
+            distHtml = `<div class="dist-tag">${distPct > 0 ? distPct.toFixed(1) + '% to go' : ''}</div>`;
+        }
+    }
+    
+    // Add distance tag if not already there
+    let tag = el.querySelector('.dist-tag');
+    if (!tag) {
+        tag = document.createElement('div');
+        el.appendChild(tag);
+    }
+    tag.outerHTML = distHtml;
+  };
+
+  updateIndicator('pos-modal-tp1', p.tp1, true);
+  updateIndicator('pos-modal-tp2', p.tp2, true);
+  updateIndicator('pos-modal-tp3', p.tp3, true);
+  updateIndicator('pos-modal-sl', p.stop_loss, false);
+
+  m.classList.add('open');
+}
+
+function closePositionModal() {
+  document.getElementById('pos-modal').classList.remove('open');
+}
+</script>
+
+<!-- Add Position Modal HTML -->
+<div id="pos-modal" class="modal-overlay" onclick="if(event.target===this) closePositionModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="agent-avatar">⚡</div>
+      <div>
+        <h2 id="pos-modal-sym">SYMBOL</h2>
+      </div>
+      <div id="pos-modal-dir"></div>
+      <button class="modal-close" onclick="closePositionModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <h3>Position Details</h3>
+        <div class="modal-stats">
+          <div class="modal-stat"><div class="label">Entry Price</div><div class="val" id="pos-modal-entry">—</div></div>
+          <div class="modal-stat"><div class="label" style="color:var(--accent-2)">Market Price</div><div class="val" id="pos-modal-market">—</div></div>
+          <div class="modal-stat"><div class="label">Total Notional</div><div class="val" id="pos-modal-size" style="font-size:14px">—</div></div>
+          <div class="modal-stat"><div class="label">Confidence</div><div class="val" id="pos-modal-conf">—</div></div>
+        </div>
+      </div>
+      <div class="modal-section">
+        <h3>Exit Barriers & Risk</h3>
+        <div class="modal-stats">
+          <div class="modal-stat"><div class="label" style="color:var(--green)">Take Profit 1</div><div class="val" id="pos-modal-tp1">—</div></div>
+          <div class="modal-stat"><div class="label" style="color:var(--green)">Take Profit 2</div><div class="val" id="pos-modal-tp2">—</div></div>
+          <div class="modal-stat"><div class="label" style="color:var(--green)">Take Profit 3</div><div class="val" id="pos-modal-tp3">—</div></div>
+          <div class="modal-stat"><div class="label" style="color:var(--red)">Stop Loss</div><div class="val" id="pos-modal-sl">—</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "balance": 10121.481779,
+  "initial_balance": 10000,
+  "total_pnl": 138.723532,
+  "total_trades": 33,
+  "total_wins": 17,
+  "total_losses": 16,
+  "positions": {
+    "PAXGUSDT": {
+      "entry": 4651.836181194839,
+      "size": 0.4471311142825517,
+      "direction": "BULLISH",
+      "confidence": 86.7899265507687,
+      "atr_percent": 1.793549971042675,
+      "time": "2026-04-03T23:28:54.323893",
+      "entry_unix": 1775233734.3238933,
+      "specialist_probs": null
+    },
+    "HYPEUSDT": {
+      "entry": 35.8992160178689,
+      "size": 22.576833511479812,
+      "direction": "BEARISH",
+      "confidence": 74.31396677205045,
+      "atr_percent": 4.602828470378657,
+      "time": "2026-04-03T23:28:55.950811",
+      "entry_unix": 1775233735.9508116,
+      "specialist_probs": 

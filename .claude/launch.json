@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "quanta-dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["quanta_dashboard.py"],
+      "port": 5000
+    }
+  ]
+}

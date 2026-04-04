@@ -1,0 +1,7 @@
+{
+    "zeus": {
+        "ai_api_key": "aa4d3fb2ad2f4e6eb6a3f5cf0c2a2743.xrJ6DdlvZRbFeOO3",
+        "ai_base_url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        "ai_model_name": "glm-5-turbo"
+    }
+}
