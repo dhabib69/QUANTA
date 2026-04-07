@@ -1,8 +1,6 @@
 """
-QUANTA v10 -- Main Orchestrator
+QUANTA -- Main Orchestrator
 Assembles all modules and launches the trading bot.
-Phase 5: Concurrent Startup -- heavy module imports run in background
-threads while the user inputs the proxy port.
 """
 import sys
 import os
@@ -46,19 +44,16 @@ _preload_start = time.perf_counter()
 for t in _preload_threads:
     t.start()
 
-# -- Proxy Configuration (runs BEFORE heavy imports to avoid GIL deadlock) --
-# NetworkHelper import is deferred until AFTER proxy port is collected,
-# because QUANTA_network imports numpy/pandas at module level which can
-# deadlock with the background preload threads on Windows (GIL contention).
-try:
-    if sys.stdin and sys.stdin.isatty():
-        _proxy_port = input("[BOOT] Enter proxy port (blank = direct): ").strip()
-    else:
+# -- Psiphon Proxy Input (mandatory) --
+while True:
+    try:
+        _proxy_port = input("[BOOT] Enter Psiphon proxy port: ").strip()
+    except (EOFError, KeyboardInterrupt):
         _proxy_port = ""
-except (EOFError, KeyboardInterrupt):
-    _proxy_port = ""
+    if _proxy_port:
+        break
+    print("[BOOT] Proxy port is required. Please enter the Psiphon port (e.g. 2080).")
 
-# Now wait for preloads to finish BEFORE importing QUANTA_network
 for t in _preload_threads:
     t.join(timeout=60)
 
@@ -68,42 +63,31 @@ for name, status in sorted(_preload_results.items()):
     print(f"  {name}: {status}")
 print()
 
-# Safe to import now — numpy/pandas already loaded by preload threads
 from QUANTA_network import NetworkHelper
+from quanta_proxy import ProxyManager
 
-if _proxy_port:
-    _proxy_url = f"http://127.0.0.1:{_proxy_port}"
-    from quanta_proxy import ProxyManager
-    ProxyManager.set_proxy(_proxy_url)
-    ProxyManager.start_watchdog()
-    
-    # --- AUTO PROXY ISOLATION ---
-    if sys.platform == 'win32':
-        try:
-            import winreg, ctypes
-            registry_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings", 0, winreg.KEY_WRITE)
-            winreg.SetValueEx(registry_key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
-            winreg.CloseKey(registry_key)
-            ctypes.windll.wininet.InternetSetOptionW(0, 39, 0, 0)
-            ctypes.windll.wininet.InternetSetOptionW(0, 37, 0, 0)
-            print("[BOOT] Proxy Isolated: System proxy disabled (Brave un-lagged). Bot is safely tunneled.")
-        except Exception as e:
-            print(f"[BOOT] Proxy Isolation failed: {e}")
-    # ----------------------------
-    
-    import QUANTA_bot
-    import QUANTA_network as _nh_mod
-    
-    os.environ["HTTP_PROXY"] = _proxy_url
-    os.environ["HTTPS_PROXY"] = _proxy_url
-    os.environ["http_proxy"] = _proxy_url
-    os.environ["https_proxy"] = _proxy_url
-    NetworkHelper.reset_session()
-    print(f"[BOOT] Proxy active: {_proxy_url}")
-else:
-    from quanta_proxy import ProxyManager
-    ProxyManager.set_proxy(None)
-    print("[BOOT] Direct connection (no proxy)")
+_proxy_url = f"http://127.0.0.1:{_proxy_port}"
+ProxyManager.set_proxy(_proxy_url)
+ProxyManager.start_watchdog()
+
+if sys.platform == 'win32':
+    try:
+        import winreg, ctypes
+        registry_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings", 0, winreg.KEY_WRITE)
+        winreg.SetValueEx(registry_key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
+        winreg.CloseKey(registry_key)
+        ctypes.windll.wininet.InternetSetOptionW(0, 39, 0, 0)
+        ctypes.windll.wininet.InternetSetOptionW(0, 37, 0, 0)
+        print("[BOOT] Proxy Isolated: System proxy disabled (Brave un-lagged).")
+    except Exception as e:
+        print(f"[BOOT] Proxy Isolation failed: {e}")
+
+os.environ["HTTP_PROXY"]  = _proxy_url
+os.environ["HTTPS_PROXY"] = _proxy_url
+os.environ["http_proxy"]  = _proxy_url
+os.environ["https_proxy"] = _proxy_url
+NetworkHelper.reset_session()
+print(f"[BOOT] Proxy active: {_proxy_url}")
 
 # -- Binance Weight-Aware Rate Limiter --
 BINANCE_WEIGHT_LIMIT_1M = 1200
@@ -119,8 +103,6 @@ def _patched_requests_get(*args, **kwargs):
     global _binance_used_weight, _binance_last_reset
     url = args[0] if args else kwargs.get("url", "")
     kwargs.setdefault("verify", False)
-    
-    from quanta_proxy import ProxyManager
     proxy_kwargs = ProxyManager.get_requests_kwargs()
     if proxy_kwargs and "proxies" not in kwargs:
         kwargs.update(proxy_kwargs)

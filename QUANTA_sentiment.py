@@ -461,7 +461,7 @@ class SentimentEngine:
             else: mood = "Bearish"
             print(f"🧠 Groq sentiment: {gs:+.3f} | {mood} | Tracked {len(self._groq_coin_sentiment)} coins")
         else:
-            print(f"🧠 Groq: API returned None — check API key or network")
+            logging.debug("🧠 Groq: API returned None (Key missing or Rate Limit)")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # RSS AGGREGATION

@@ -1,4 +1,8 @@
 import os
+try:
+    from apis.quanta_api import TELEGRAM_TOKEN
+except ImportError:
+    TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 import time
 import logging
 import threading
@@ -18,7 +22,7 @@ class TelegramBot:
     def __init__(self, cfg):
         self.cfg = cfg
         self.last_update_id = 0
-        self.telegram_token = os.getenv("TELEGRAM_TOKEN", "")  # Token was redacted for security during public sync
+        self.telegram_token = TELEGRAM_TOKEN
         self.telegram_api = f"https://api.telegram.org/bot{self.telegram_token}"
         self.cfg.telegram_api = self.telegram_api
         self.ml = None

@@ -113,6 +113,22 @@ pip install catboost pyarrow pandas torch
 # =================== PROPER IMPORTS ===================
 import sys
 import os
+try:
+    from apis.quanta_api import (
+        TELEGRAM_CHAT_ID,
+        TELEGRAM_TOKEN,
+        BINANCE_API_KEY,
+        BINANCE_API_SECRET,
+        BYBIT_API_KEY,
+        BYBIT_API_SECRET
+    )
+except ImportError:
+    TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+    BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
+    BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
+    BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
+    BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -330,8 +346,8 @@ class Config:
         self._sys = _SysConfig  # Reference to SystemConfig singleton
 
         # ── Secrets & API ──
-        self.telegram_token = os.getenv("TELEGRAM_TOKEN", "8559725790:AAGfDn-c0o3ekbi2TebyGjFqsoTT34YyP4s")
-        self.chat_id        = os.getenv("CHAT_ID", "7987277542")
+        self.telegram_token = TELEGRAM_TOKEN
+        self.chat_id        = TELEGRAM_CHAT_ID
         self.telegram_api   = f"https://api.telegram.org/bot{self.telegram_token}"
         self.rest_url       = "https://fapi.binance.com/fapi/v1"
         from quanta_proxy import ProxyManager
@@ -577,7 +593,7 @@ class Bot:
         try:
             from quanta_multi_exchange import BybitAdapter, OKXAdapter, ExchangeRouter
             adapters = []
-            if os.environ.get('BYBIT_API_KEY'):
+            if BYBIT_API_KEY:
                 adapters.append(BybitAdapter())
                 print("   Bybit adapter loaded")
             if os.environ.get('OKX_API_KEY'):

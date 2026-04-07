@@ -54,10 +54,10 @@ CUSUM_THRESHOLD = 0.02
 # Triple Barrier Method (López de Prado 2018 Ch.3)
 # Research-backed for crypto: SL at 1.5× ATR survives noise,
 # TP1=1:1, TP2=2:1, TP3=3:1 risk/reward
-SL_RATIO = 1.5
-TP1_RATIO = 1.5
-TP2_RATIO = 3.0
-TP3_RATIO = 4.5
+SL_RATIO  = 1.5   # ATR multiplier for stop-loss
+TP1_RATIO = 1.0   # ATR multiplier for TP1 (tight — easy hit, partial close 33%)
+TP2_RATIO = 2.0   # ATR multiplier for TP2 (partial close 33%, trail SL to TP1)
+TP3_RATIO = 3.5   # ATR multiplier for TP3 (remaining 34%, full win)
 
 # 3-Tier TP Weights
 # TP1 = 1:1 R:R (barely profitable after fees) — low weight
@@ -340,6 +340,9 @@ class PaperTrading:
                 p = pos.copy()
                 if 'time' in p and isinstance(p['time'], datetime):
                     p['time'] = p['time'].isoformat()
+                # Convert numpy arrays to lists for JSON serialization
+                if 'specialist_probs' in p and isinstance(p['specialist_probs'], np.ndarray):
+                    p['specialist_probs'] = p['specialist_probs'].tolist()
                 serialized_pos[sym] = p
 
             state = {
@@ -476,15 +479,33 @@ class PaperTrading:
             if confidence > 0: self.positions[symbol]['confidence'] = confidence
             if atr_percent > 0: self.positions[symbol]['atr_percent'] = atr_percent
         else:
+            # Compute ATR-based barrier prices at entry
+            atr_move = fill_price * (atr_percent / 100.0)
+            if side == 'BULLISH':
+                _tp1 = fill_price + atr_move * TP1_RATIO
+                _tp2 = fill_price + atr_move * TP2_RATIO
+                _tp3 = fill_price + atr_move * TP3_RATIO
+                _sl  = fill_price - atr_move * SL_RATIO
+            else:
+                _tp1 = fill_price - atr_move * TP1_RATIO
+                _tp2 = fill_price - atr_move * TP2_RATIO
+                _tp3 = fill_price - atr_move * TP3_RATIO
+                _sl  = fill_price + atr_move * SL_RATIO
+
             self.positions[symbol] = {
                 'entry': fill_price, 'size': size, 'direction': side,
                 'confidence': confidence, 'atr_percent': atr_percent,
                 'time': datetime.now(),
                 'entry_unix': time.time(),  # BS: for bars-to-hit tracking
-                'specialist_probs': None,  # v11.5: Set by bot for Brier tracking
+                'specialist_probs': None,   # v11.5: Set by bot for Brier tracking
+                # ATR-based barrier levels (v11.6)
+                'tp1_price': _tp1, 'tp2_price': _tp2, 'tp3_price': _tp3, 'sl_price': _sl,
+                # Partial close state (v11.6)
+                'tp1_hit': False, 'tp2_hit': False,
+                'original_size': size,  # for win/loss labeling after partial closes
             }
 
-    def close_position(self, symbol, exit_price, barrier_hit='TIMEOUT'):
+    def close_position(self, symbol, exit_price, barrier_hit='TIMEOUT', partial=False, partial_fraction=1.0):
         if symbol in self.positions:
             pos = self.positions[symbol]
             from quanta_config import Config as _cfg
@@ -492,84 +513,107 @@ class PaperTrading:
             commission_bps = getattr(_bt, 'commission_bps', 4.0)
             slippage_bps   = getattr(_bt, 'slippage_bps',   2.0)
 
+            # Determine how much size to close
+            close_fraction = max(0.0, min(1.0, partial_fraction)) if partial else 1.0
+            close_size = pos['size'] * close_fraction
+
             # Exit friction: slippage moves price AGAINST us on close
-            # LONG close: we sell at slightly lower price
-            # SHORT close: we buy back at slightly higher price
             slip_factor = slippage_bps / 10000.0
             if pos['direction'] == 'BULLISH':
                 fill_exit = exit_price * (1.0 - slip_factor)
             else:
                 fill_exit = exit_price * (1.0 + slip_factor)
 
-            pnl = (fill_exit - pos['entry']) * pos['size'] if pos['direction'] == 'BULLISH' \
-                  else (pos['entry'] - fill_exit) * pos['size']
+            pnl = (fill_exit - pos['entry']) * close_size if pos['direction'] == 'BULLISH' \
+                  else (pos['entry'] - fill_exit) * close_size
 
-            exit_commission = fill_exit * pos['size'] * (commission_bps / 10000.0)
+            exit_commission = fill_exit * close_size * (commission_bps / 10000.0)
             pnl -= exit_commission  # deduct exit commission from PnL
 
             self.balance += pnl
             self.total_pnl += pnl
-            self.total_trades += 1
-            if pnl > 0:
-                self.total_wins += 1
-            else:
-                self.total_losses += 1
+
+            # For partial closes: only count win/loss on FINAL close
+            # SL after TP1 already hit = WIN (banked partial profit)
+            is_final_close = not partial
+            if is_final_close:
+                self.total_trades += 1
+                tp1_was_hit = pos.get('tp1_hit', False)
+                tp3_was_hit = pos.get('tp3_hit', False)
+                # Win if: pnl > 0, OR SL fired but TP1 already banked, OR chandelier SL (TP1+2+3 all banked)
+                if pnl > 0 or (barrier_hit in ('SL', 'SL_AUTO') and tp1_was_hit) or barrier_hit == 'CHANDELIER_SL':
+                    self.total_wins += 1
+                else:
+                    self.total_losses += 1
 
             with open(self.trade_log_file, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow([symbol, pos['entry'], exit_price, pos['direction'], pnl, datetime.now()])
 
-            # v11.4: Notify risk manager + paper logger
-            self.risk_manager.on_trade_closed(symbol, pnl, self.balance)
+            # v11.4: Notify risk manager + paper logger (only on final close)
+            if is_final_close:
+                # For RL/risk: treat SL-after-TP1 and CHANDELIER_SL as positive outcome
+                reported_pnl = abs(pnl) if (barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL') and pos.get('tp1_hit', False)) else pnl
+                self.risk_manager.on_trade_closed(symbol, reported_pnl, self.balance)
             self.paper_logger.log_trade_closed(
                 symbol=symbol, direction=pos['direction'],
                 entry_price=pos['entry'], exit_price=exit_price,
-                size=pos['size'], pnl=pnl,
+                size=close_size, pnl=pnl,
                 entry_time=str(pos.get('time', '')),
                 barrier_hit=barrier_hit,
                 confidence=pos.get('confidence', 0),
             )
 
-            # v11.5: Update per-agent Brier score calibration
-            if pos.get('specialist_probs') is not None and hasattr(self, '_ml_engine') and self._ml_engine:
-                outcome = 1 if pnl > 0 else 0
+            # v11.5: Update per-agent Brier score calibration (final close only)
+            if is_final_close and pos.get('specialist_probs') is not None and hasattr(self, '_ml_engine') and self._ml_engine:
+                tp1_was_hit = pos.get('tp1_hit', False)
+                outcome = 1 if (pnl > 0 or (barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL') and tp1_was_hit) or barrier_hit == 'CHANDELIER_SL') else 0
                 try:
                     self._ml_engine.update_brier_scores(pos['specialist_probs'], outcome)
                 except Exception:
                     pass
 
-            # v11.5b: Link trade result to RL memory for PPO training
-            if self._rl_memory:
+            # v11.5b: Link trade result to RL memory for PPO training (final close only)
+            if is_final_close and self._rl_memory:
                 try:
-                    pnl_pct = (pnl / (pos['entry'] * pos['size'])) * 100 if pos['entry'] * pos['size'] > 0 else 0
+                    tp1_was_hit = pos.get('tp1_hit', False)
+                    # Correct barrier label: SL-after-TP1 should not penalize RL
+                    effective_barrier = barrier_hit
+                    if barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL') and tp1_was_hit:
+                        effective_barrier = 'TP1'  # treat as partial win for PPO reward
+                    orig_size = pos.get('original_size', close_size)
+                    pnl_pct = (pnl / (pos['entry'] * orig_size)) * 100 if pos['entry'] * orig_size > 0 else 0
                     self._rl_memory.record_trade_result(
                         symbol=symbol, pnl=pnl, pnl_pct=pnl_pct,
-                        barrier_hit=barrier_hit,
+                        barrier_hit=effective_barrier,
                         entry_price=pos['entry'], exit_price=exit_price
                     )
                 except Exception as e:
                     logging.debug(f"Could not link trade to RL memory: {e}")
 
-            # BS implied vol tracking: record bars elapsed for this trade
-            # (1 bar = 5 minutes = 300 seconds at the standard QUANTA candle interval)
-            if barrier_hit in ('TP1', 'TP2', 'SL', 'TP_AUTO', 'SL_AUTO'):
+            # BS implied vol tracking (final close only)
+            if is_final_close and barrier_hit in ('TP1', 'TP2', 'TP3', 'SL', 'TP_AUTO', 'SL_AUTO', 'CHANDELIER_SL'):
                 try:
                     from collections import deque as _deque
                     entry_unix = pos.get('entry_unix', 0)
                     if entry_unix > 0:
                         elapsed_sec = time.time() - entry_unix
-                        bars_elapsed = max(1.0, elapsed_sec / 300.0)  # 5m candles
+                        bars_elapsed = max(1.0, elapsed_sec / 300.0)
                         if symbol not in self._bs_bars_to_hit:
                             self._bs_bars_to_hit[symbol] = _deque(maxlen=50)
                         self._bs_bars_to_hit[symbol].append(bars_elapsed)
                 except Exception:
                     pass
 
-            del self.positions[symbol]
+            if partial:
+                # Reduce remaining size — keep position open
+                self.positions[symbol]['size'] -= close_size
+            else:
+                del self.positions[symbol]
 
             # Persist state to disk after every trade
             self._save_state()
-            
+
             # Record tick for equity curve rendering
             self.paper_logger.snapshot(
                 balance=self.balance,
@@ -588,14 +632,98 @@ class PaperTrading:
         return float(sum(dq) / len(dq))
 
     def tick(self, symbol, current_price):
+        # v11.6: ATR-based 3-tier TP with partial closes and Chandelier trailing after TP3
         if symbol not in self.positions:
             return
         pos = self.positions[symbol]
-        pnl_percent = (current_price - pos['entry']) / pos['entry'] * 100 if pos['direction'] == 'BULLISH' else (pos['entry'] - current_price) / pos['entry'] * 100
-        if pnl_percent >= 3:
-            self.close_position(symbol, current_price, barrier_hit='TP_AUTO')
-        elif pnl_percent <= -2:
-            self.close_position(symbol, current_price, barrier_hit='SL_AUTO')
+        direction = pos['direction']
+
+        # Retrieve stored barrier levels (fallback to old hardcoded logic if missing)
+        tp1 = pos.get('tp1_price')
+        tp2 = pos.get('tp2_price')
+        tp3 = pos.get('tp3_price')
+        sl  = pos.get('sl_price')
+
+        if tp1 is None:
+            # Legacy position opened before v11.6 — fall back to old behavior
+            pnl_pct = (current_price - pos['entry']) / pos['entry'] * 100 \
+                      if direction == 'BULLISH' else (pos['entry'] - current_price) / pos['entry'] * 100
+            if pnl_pct >= 3:
+                self.close_position(symbol, current_price, barrier_hit='TP_AUTO')
+            elif pnl_pct <= -2:
+                self.close_position(symbol, current_price, barrier_hit='SL_AUTO')
+            self.risk_manager.heartbeat(self.balance)
+            return
+
+        is_bull = direction == 'BULLISH'
+
+        # Chandelier trail distance: ATR × 3.0 (entry ATR as proxy — consistent, no recalc needed)
+        atr_move = pos['entry'] * (pos.get('atr_percent', 1.0) / 100.0)
+        chandelier_dist = atr_move * 3.0
+
+        # ── CHANDELIER TRAILING MODE (after TP3) ──
+        if pos.get('tp3_hit', False):
+            # Update peak price since TP3 hit
+            if is_bull:
+                new_peak = max(pos.get('peak_since_tp3', current_price), current_price)
+                chandelier_sl = new_peak - chandelier_dist
+                self.positions[symbol]['peak_since_tp3'] = new_peak
+                self.positions[symbol]['sl_price'] = max(chandelier_sl, pos.get('sl_price', 0))  # never lower the SL
+            else:
+                new_peak = min(pos.get('peak_since_tp3', current_price), current_price)
+                chandelier_sl = new_peak + chandelier_dist
+                self.positions[symbol]['peak_since_tp3'] = new_peak
+                self.positions[symbol]['sl_price'] = min(chandelier_sl, pos.get('sl_price', float('inf')))  # never raise the SL
+
+            # Check if chandelier SL was hit
+            updated_sl = self.positions[symbol]['sl_price']
+            if (is_bull and current_price <= updated_sl) or (not is_bull and current_price >= updated_sl):
+                self.close_position(symbol, current_price, barrier_hit='CHANDELIER_SL')
+            self.risk_manager.heartbeat(self.balance)
+            return
+
+        # ── STANDARD BARRIER CHECKS (before TP3) ──
+        def above(price, level): return price >= level
+        def below(price, level): return price <= level
+        crossed_tp1 = above(current_price, tp1) if is_bull else below(current_price, tp1)
+        crossed_tp2 = above(current_price, tp2) if is_bull else below(current_price, tp2)
+        crossed_tp3 = above(current_price, tp3) if is_bull else below(current_price, tp3)
+        crossed_sl  = below(current_price, sl)  if is_bull else above(current_price, sl)
+
+        if crossed_tp3 and pos.get('tp2_hit', False):
+            # TP3 hit — close 34%, enter Chandelier trailing mode on remainder
+            self.close_position(symbol, current_price, barrier_hit='TP3',
+                                partial=True, partial_fraction=0.34)
+            if symbol in self.positions:
+                self.positions[symbol]['tp3_hit'] = True
+                self.positions[symbol]['peak_since_tp3'] = current_price
+                # Set initial chandelier SL at TP3 level - dist (never below TP2)
+                if is_bull:
+                    init_sl = max(tp2, current_price - chandelier_dist)
+                else:
+                    init_sl = min(tp2, current_price + chandelier_dist)
+                self.positions[symbol]['sl_price'] = init_sl
+
+        elif crossed_tp2 and pos.get('tp1_hit', False) and not pos.get('tp2_hit', False):
+            # TP2 hit — close 33%, trail SL to TP1 level
+            self.close_position(symbol, current_price, barrier_hit='TP2',
+                                partial=True, partial_fraction=0.333)
+            if symbol in self.positions:
+                self.positions[symbol]['tp2_hit'] = True
+                self.positions[symbol]['sl_price'] = tp1  # trail SL to TP1
+
+        elif crossed_tp1 and not pos.get('tp1_hit', False):
+            # TP1 hit — close 33%, move SL to breakeven
+            self.close_position(symbol, current_price, barrier_hit='TP1',
+                                partial=True, partial_fraction=0.333)
+            if symbol in self.positions:
+                self.positions[symbol]['tp1_hit'] = True
+                self.positions[symbol]['sl_price'] = pos['entry']  # breakeven
+
+        elif crossed_sl:
+            # SL hit — full close (win/loss determined inside close_position by tp1_hit flag)
+            self.close_position(symbol, current_price, barrier_hit='SL')
+
         # v11.4: Risk manager heartbeat
         self.risk_manager.heartbeat(self.balance)
 
@@ -1406,7 +1534,12 @@ class RLMemory:
                 MONITORING_WINDOW = 86400  # 24 hours in seconds
                 
                 if sl_hit and sl_time <= min(tp1_time, tp2_time, tp3_time):
+                    # Pure SL hit (before any TP) — wrong prediction
                     success = False; outcome_tier = 'SL'; sample_weight = SL_WEIGHT; pred['outcome'] = 'wrong'
+                elif sl_hit and tp1_hit and tp1_time < sl_time:
+                    # SL hit AFTER TP1 — partial win: banked profit at TP1, trail stopped out
+                    # Treat as TP1 for training signal — model was directionally correct
+                    success = True; outcome_tier = 'TP1'; sample_weight = TP1_WEIGHT; pred['outcome'] = 'correct'
                 elif tp3_hit and tp3_time < sl_time:
                     success = True; outcome_tier = 'TP3'; pred['outcome'] = 'correct'
                 

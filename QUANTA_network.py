@@ -28,6 +28,7 @@ from pathlib import Path
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from quanta_proxy import ProxyManager
 
 import numpy as np
 import pandas as pd
@@ -38,11 +39,6 @@ try:
 except ImportError:
     pass
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Proxy Configuration imported from quanta_proxy
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-from quanta_proxy import ProxyManager
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -154,12 +150,8 @@ class NetworkHelper:
                     delay = min(2 ** attempt, 10)
                     time.sleep(delay)
                 
-                # Explicitly pass proxy to bypass session misconfiguration
                 proxy_kwargs = ProxyManager.get_requests_kwargs()
-                    
                 if proxy_kwargs:
-                    # Session caches DNS and routing, bypass entirely!
-                    # Do NOT use global requests.get as main.py patches it and it breaks!
                     response = session.request("GET", url, params=params, timeout=timeout, **proxy_kwargs)
                 else:
                     response = session.get(url, params=params, timeout=timeout, verify=False)
@@ -229,11 +221,8 @@ class NetworkHelper:
         session = NetworkHelper._get_session()
         for attempt in range(max_retries):
             try:
-                # Explicitly pass proxy to bypass session misconfiguration
                 proxy_kwargs = ProxyManager.get_requests_kwargs()
-                    
                 if proxy_kwargs:
-                    # Do NOT use global requests.get as main.py patches it and it breaks!
                     response = session.request("POST", url, data=data, timeout=timeout, **proxy_kwargs)
                 else:
                     response = session.post(url, data=data, timeout=timeout, verify=False)
@@ -247,10 +236,6 @@ class NetworkHelper:
                 if attempt < max_retries - 1:
                     time.sleep((2 ** attempt) + (time.time() % 1))
         return None
-
-
-# (FreeProxyManager moved to quanta_proxy.py)
-
 
 
 
@@ -277,4 +262,3 @@ SWEEP_MAX_INTERVAL = 20
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # CANDLE STORE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-

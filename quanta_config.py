@@ -2,10 +2,24 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Centralized API Configuration
+try:
+    from apis.quanta_api import (
+        QUANTA_PROXY_PORT,
+        AI_BASE_URL,
+        AI_API_KEY,
+        AI_MODEL_NAME
+    )
+except ImportError:
+    QUANTA_PROXY_PORT = os.getenv("QUANTA_PROXY_PORT", "52681")
+    AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.openai.com/v1")
+    AI_API_KEY = os.getenv("AI_API_KEY", "")
+    AI_MODEL_NAME = os.getenv("AI_MODEL_NAME", "claude-3-5-sonnet-20241022")
+
 @dataclass
 class NetworkConfig:
     """Network-level configurations for API routing and proxies."""
-    proxy_port: str = os.getenv("QUANTA_PROXY_PORT", "52681")  # Defaulted to 52681 via user request
+    proxy_port: str = QUANTA_PROXY_PORT  # Centralized in apis/quanta_api.py
     binance_weight_limit_1m: int = 1200
     binance_weight_soft_limit: float = 0.90
     max_retries: int = 3
@@ -558,9 +572,9 @@ class PaperTradingConfig:
 @dataclass
 class ZeusConfig:
     """ZEUS.ai Universal Orchestrator settings and Hard Guardrails."""
-    ai_base_url: str = os.getenv("AI_BASE_URL", "")
-    ai_api_key: str = os.getenv("AI_API_KEY", "")
-    ai_model_name: str = os.getenv("AI_MODEL_NAME", "claude-3-5-sonnet-20241022")
+    ai_base_url: str = AI_BASE_URL
+    ai_api_key: str = AI_API_KEY
+    ai_model_name: str = AI_MODEL_NAME
     
     # CatBoost Guardrails
     max_catboost_iter: int = 3000

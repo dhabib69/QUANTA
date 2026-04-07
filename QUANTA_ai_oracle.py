@@ -1,4 +1,9 @@
 import os
+try:
+    from apis.quanta_api import GROQ_API_KEY, GEMINI_API_KEY
+except ImportError:
+    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 import json
 import requests
 import logging
@@ -24,9 +29,9 @@ def get_groq_sentiment(headlines: list, active_coins: list = None) -> dict:
         }
     Returns None on failure.
     """
-    api_key = os.environ.get("GROQ_API_KEY", "")
+    api_key = GROQ_API_KEY
     if not api_key:
-        print("🧠 Groq Error: API Key is completely empty string in environment!")
+        logging.warning("🧠 Groq: API Key missing or empty. Falling back to L&M lexicon.")
         return None
     
     if not headlines:
@@ -140,8 +145,9 @@ def get_oracle_summary(direction: str, symbol: str, headlines: list) -> str:
     Queries Google Gemini 1.5 Flash to generate a 1-sentence contextual summary
     based on the latest crypto news headlines. Non-blocking with strict timeout.
     """
-    api_key = os.environ.get("GEMINI_API_KEY", "")
+    api_key = GEMINI_API_KEY
     if not api_key:
+        logging.debug("🧠 Gemini: API key missing.")
         return ""
 
     if not headlines:
@@ -187,7 +193,7 @@ def ask_oracle_chat(question: str, headlines: list = None) -> str:
     """
     General purpose Oracle query for Telegram commands (e.g. /ask BTC)
     """
-    api_key = os.environ.get("GEMINI_API_KEY", "")
+    api_key = GEMINI_API_KEY
     if not api_key:
         return "⚠️ Gemini API key missing."
         
