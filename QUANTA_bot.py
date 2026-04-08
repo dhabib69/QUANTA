@@ -181,6 +181,13 @@ except ImportError as e:
     WS_FEED_AVAILABLE = False
     print(f"⚠️  WebSocket components not found ({e}) - using REST fallback")
 
+try:
+    from quanta_nike_screener import NikeScreener, NikeSignal
+    NIKE_SCREENER_AVAILABLE = True
+except ImportError as e:
+    NIKE_SCREENER_AVAILABLE = False
+    print(f"⚠️  NikeScreener not found ({e})")
+
 # 🧠 QUANTA v11.5b NEURAL ENGINE
 try:
     import torch
@@ -514,7 +521,7 @@ except ImportError:
     NUMBA_AVAILABLE = False
     print("⚠️ Numba not installed. Falling back to native Python math.")
     # Dummy decorator fallback
-from quanta_features import Indicators, MultiTimeframeAnalyzer
+from quanta_features import Indicators, MultiTimeframeAnalyzer, compute_live_kou_barrier_components
 from QUANTA_ml_engine import DeepMLEngine
 from QUANTA_trading_core import PaperTrading, RLMemory
 from quanta_monitor import ModelMonitor
@@ -645,7 +652,11 @@ class Bot:
         else:
             self.ws_producer = None
             print("⚠️ WSEventProducer disabled (WS_FEED_AVAILABLE=False).")
-        
+
+        # Nike Screener — market-wide 5m breakout scanner (watches ALL symbols)
+        self.nike_screener: Optional['NikeScreener'] = None
+        self._nike_open_symbols: set = set()   # symbols with an active Nike position
+
         # Alert deduplication - prevent spamming same pair
         self.alerted_pairs = {}  # {symbol: last_alert_time}
         self.alert_cooldown = 3600  # 1 hour cooldown (matches outcome check time)
@@ -753,6 +764,111 @@ class Bot:
             # Don't exit, but warn loudly
             print("⚠️ WARNING: Prediction pipeline might be unstable!")
     
+    def _get_live_5m_log_returns(self, symbol, limit=100):
+        """Fetch recent 5m log returns from the live candle buffer when available."""
+        stores = []
+        if getattr(self, 'candle_store', None) is not None:
+            stores.append(self.candle_store)
+
+        _ml_store = getattr(getattr(self, 'ml', None), 'candle_store', None)
+        if _ml_store is not None and all(_ml_store is not s for s in stores):
+            stores.append(_ml_store)
+
+        for store in stores:
+            try:
+                klines = store.get(symbol, '5m')
+                if not klines or len(klines) < 4:
+                    continue
+                closes = np.asarray([float(k[4]) for k in klines[-limit:]], dtype=np.float64)
+                if len(closes) < 4:
+                    continue
+                closes = np.maximum(closes, 1e-12)
+                return np.diff(np.log(closes))
+            except Exception:
+                continue
+        return None
+
+    def _compute_live_kou_score(self, symbol, price, atr_5m, direction, specialist_key, feature_prob=0.5):
+        """
+        Specialist-aware execution score for BS/Kou gating and sizing.
+
+        Uses the live 5m candle buffer when available; otherwise falls back to
+        feature 275 so execution remains robust during cold starts.
+        """
+        _ev = self.cfg.events
+        spec_settings = {
+            'athena':     (_ev.athena_tp_atr, _ev.athena_sl_atr, _ev.athena_max_bars),
+            'ares':       (_ev.ares_tp_atr, _ev.ares_sl_atr, _ev.ares_max_bars),
+            'hermes':     (_ev.hermes_tp_atr, _ev.hermes_sl_atr, _ev.hermes_max_bars),
+            'artemis':    (_ev.artemis_tp_atr, _ev.artemis_sl_atr, _ev.artemis_max_bars),
+            'chronos':    (_ev.chronos_tp_atr, _ev.chronos_sl_atr, _ev.chronos_max_bars),
+            'hephaestus': (_ev.heph_tp_atr, _ev.heph_sl_atr, _ev.heph_max_bars),
+            'nike':       (_ev.nike_tp_atr, _ev.nike_sl_atr, _ev.nike_max_bars),
+        }
+        tp_mult, sl_mult, max_bars = spec_settings.get(
+            specialist_key,
+            (_ev.athena_tp_atr, _ev.athena_sl_atr, _ev.athena_max_bars),
+        )
+
+        baseline = sl_mult / max(tp_mult + sl_mult, 1e-12)
+        direction_key = str(direction).upper()
+        fallback_prob = float(max(0.0, min(1.0, feature_prob)))
+        if direction_key == 'BEARISH':
+            fallback_prob = 1.0 - fallback_prob
+
+        fallback = {
+            'prob': fallback_prob,
+            'order_prob': fallback_prob,
+            'time_prob': 1.0,
+            'sigma_eff': 0.0,
+            'tp_dist_live': 0.0,
+            'sl_dist_live': 0.0,
+            'bars_live': int(max_bars),
+            'conditional_jump': False,
+            'source': 'feature_fallback',
+            'baseline': float(max(0.0, min(1.0, baseline))),
+            'specialist': specialist_key,
+        }
+
+        if price <= 0 or atr_5m <= 0:
+            return fallback
+
+        log_returns = self._get_live_5m_log_returns(symbol, limit=100)
+        if log_returns is None or len(log_returns) < 3:
+            return fallback
+
+        tp_ratio = float(max(0.0, (tp_mult * atr_5m) / max(price, 1e-12)))
+        sl_ratio = float(max(0.0, (sl_mult * atr_5m) / max(price, 1e-12)))
+        tp_dist = float(np.log1p(tp_ratio))
+        sl_dist = float(-np.log(max(1e-8, 1.0 - min(sl_ratio, 0.95))))
+        conditional_jump = specialist_key == 'nike' and direction_key == 'BULLISH'
+
+        live = compute_live_kou_barrier_components(
+            log_returns,
+            tp_dist,
+            sl_dist,
+            max_bars,
+            direction=direction_key,
+            conditional_jump=conditional_jump,
+            specialist=specialist_key,
+        )
+        live['source'] = live.get('source', 'live')
+        live['baseline'] = float(max(0.0, min(1.0, baseline)))
+        live['specialist'] = specialist_key
+        return live
+
+    def _build_nike_exit_profile(self):
+        _ev = self.cfg.events
+        return {
+            'mode': 'nike_v2',
+            'bank_atr': float(_ev.nike_bank_atr),
+            'bank_fraction': float(_ev.nike_bank_fraction),
+            'runner_trail_atr': float(_ev.nike_runner_trail_atr),
+            'sl_atr': float(_ev.nike_sl_atr),
+            'max_bars_pre_bank': int(_ev.nike_max_bars_pre_bank),
+            'max_bars_post_bank': int(_ev.nike_max_bars_post_bank),
+        }
+
     def _signal_handler(self, signum, frame):
         """Graceful shutdown — flat all positions, then save state."""
         print(f"\n⚠️ SHUTTING DOWN (signal {signum})...")
@@ -1397,6 +1513,227 @@ class Bot:
                 time.sleep(0.5)
             except Exception as e:
                 time.sleep(5.0)
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # NIKE SCREENER CONSUMER
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    NIKE_MAX_CONCURRENT = 3       # max simultaneous Nike positions
+    NIKE_MAX_RISK_PCT   = 0.01    # 1% of account per Nike trade
+
+    def _nike_signal_consumer(self):
+        """
+        Consumes NikeSignal events from the screener queue.
+
+        For each signal:
+          1. Guard: skip if coin already in open positions or over max concurrent
+          2. Build an opportunity dict compatible with the existing RL pipeline
+          3. Append to rl_opportunities so it flows through the normal
+             Telegram alert + outcome-check machinery
+          4. Optionally send an immediate Telegram notification
+        """
+        import time
+        if not self.nike_screener:
+            return
+
+        logging.info("NikeConsumer: started")
+
+        while not self.stop_event.is_set():
+            try:
+                try:
+                    sig = self.nike_screener.signal_queue.get(timeout=1.0)
+                except Exception:
+                    continue   # timeout — loop back
+
+                symbol = sig.symbol
+                execute_live = bool(
+                    (sig.tier == 'A' and getattr(self.cfg.events, 'nike_tier_a_live', True)) or
+                    (sig.tier == 'B' and getattr(self.cfg.events, 'nike_tier_b_live', False)) or
+                    (sig.tier == 'C' and getattr(self.cfg.events, 'nike_tier_c_live', False))
+                )
+
+                # ── 1. Position guard ─────────────────────────────────────
+                # Skip if this symbol is already tracked by Nike or already open in paper.
+                if symbol in self._nike_open_symbols or (
+                    hasattr(self, 'paper') and self.paper and symbol in getattr(self.paper, 'positions', {})
+                ):
+                    logging.debug(f"NikeConsumer: {symbol} already tracked, skip")
+                    continue
+
+                # Live execution tiers respect the concurrent-trade cap.
+                if execute_live and len(self._nike_open_symbols) >= self.NIKE_MAX_CONCURRENT:
+                    logging.debug(
+                        f"NikeConsumer: max concurrent ({self.NIKE_MAX_CONCURRENT}) reached, "
+                        f"downgrading {symbol} to observe-only"
+                    )
+                    execute_live = False
+
+                # ── 2. Build opportunity dict ─────────────────────────────
+                # Mirrors the structure created in the main prediction loop so
+                # the Telegram worker, outcome checker, and RL trainer all work
+                # without modification.
+                tp_pct  = (sig.tp_price - sig.close) / sig.close * 100
+                sl_pct  = (sig.sl_price - sig.close) / sig.close * 100   # negative
+
+                opportunity = {
+                    'symbol':          symbol,
+                    'direction':       'BULLISH',
+                    'confidence':      75.0,          # empirical: 49% win × 2.43 PF
+                    'magnitude':       sig.body_pct,
+                    'volatility':      sig.atr / sig.close * 100 if sig.close > 0 else 1.0,
+                    'uncertainty':     0.25,
+                    'score':           sig.body_ratio * sig.vol_ratio,
+                    'price':           sig.close,
+                    'entry_price':     sig.close,
+                    'tp1':             sig.tp_price,
+                    'tp2':             sig.tp_price,
+                    'tp3':             sig.tp_price,
+                    'sl':              sig.sl_price,
+                    'tf_analysis':     {},
+                    'features':        [],
+                    'specialist_probs':[0] * 7,
+                    'for_rl':          True,
+                    'timestamp':       sig.timestamp,
+                    'prediction_time': sig.date_str,
+                    'ppo_action':      1,
+                    'ppo_log_prob':    0.0,
+                    'ppo_value':       0.0,
+                    'ppo_size_mult':   1.0,
+                    'shap_summary':    None,
+                    # Nike-specific metadata
+                    'agent':           'Nike',
+                    'nike_body_pct':   sig.body_pct,
+                    'nike_body_ratio': sig.body_ratio,
+                    'nike_quiet_pct':  sig.avg_prior_pct,
+                    'nike_vol_ratio':  sig.vol_ratio,
+                    'nike_body_eff':   sig.body_eff,
+                    'nike_atr':        sig.atr,
+                }
+                opportunity['confidence'] = float(sig.confidence)
+                opportunity['score'] = float(sig.score)
+                opportunity['ppo_size_mult'] = float(sig.size_mult)
+                opportunity['specialist'] = 'nike'
+                opportunity['exit_profile'] = self._build_nike_exit_profile()
+                opportunity['timeout_bars'] = int(self.cfg.events.nike_max_bars_post_bank)
+                opportunity['nike_tier'] = sig.tier
+                opportunity['nike_score'] = float(sig.score)
+                opportunity['nike_entry_mode'] = sig.entry_mode
+                opportunity['nike_bs_floor'] = float(sig.bs_floor)
+                opportunity['nike_live_execute'] = bool(execute_live)
+                bs_ctx = self._compute_live_kou_score(
+                    symbol,
+                    sig.close,
+                    sig.atr,
+                    'BULLISH',
+                    'nike',
+                    feature_prob=float(sig.confidence) / 100.0,
+                )
+                bs_prob = float(max(0.0, min(1.0, bs_ctx.get('prob', float(sig.confidence) / 100.0))))
+                bs_baseline = float(
+                    max(
+                        0.0,
+                        min(
+                            1.0,
+                            bs_ctx.get(
+                                'baseline',
+                                self.cfg.events.nike_sl_atr / max(self.cfg.events.nike_tp_atr + self.cfg.events.nike_sl_atr, 1e-12),
+                            ),
+                        ),
+                    )
+                )
+                bs_floor = float(max(bs_baseline, sig.bs_floor))
+                if bs_prob < bs_floor:
+                    logging.info(
+                        f"NikeConsumer: BS veto {symbol} tier={sig.tier} "
+                        f"P={bs_prob:.2f} floor={bs_floor:.2f} src={bs_ctx.get('source', '?')}"
+                    )
+                    continue
+                opportunity['bs_prob'] = bs_prob
+                opportunity['bs_order_prob'] = float(max(0.0, min(1.0, bs_ctx.get('order_prob', bs_prob))))
+                opportunity['bs_time_prob'] = float(max(0.0, min(1.0, bs_ctx.get('time_prob', 1.0))))
+                opportunity['bs_baseline'] = bs_baseline
+                opportunity['bs_source'] = bs_ctx.get('source', 'feature_fallback')
+                opportunity['bs_specialist'] = 'nike'
+
+                # ── 3. Register in open set ───────────────────────────────
+                if execute_live:
+                    pass
+                    self._nike_open_symbols.add(symbol)
+                if execute_live and hasattr(self, 'paper') and self.paper and sig.close > 0 and sig.atr > 0:
+                    atr_percent = (sig.atr / sig.close) * 100.0
+                    barrier_rr = float(self.cfg.events.nike_tp_atr / max(self.cfg.events.nike_sl_atr, 1e-6))
+                    self.paper.open_position(
+                        symbol,
+                        sig.close,
+                        'BULLISH',
+                        float(sig.confidence),
+                        atr_percent,
+                        ppo_size_mult=float(sig.size_mult),
+                        barrier_rr=barrier_rr,
+                        bs_edge=bs_prob - bs_baseline,
+                        bs_prob=bs_prob,
+                        specialist='nike',
+                        exit_profile=opportunity['exit_profile'],
+                        timeout_bars=opportunity['timeout_bars'],
+                    )
+
+                # ── 4. Push to RL pipeline ────────────────────────────────
+                if hasattr(self, 'rl_opportunities'):
+                    self.rl_opportunities.append(opportunity)
+                    with self._save_lock:
+                        self._unsaved_count += 1
+
+                # Schedule removal from open set after MAX_BARS × 5 min
+                from quanta_config import Config as _c
+                if execute_live:
+                    pass
+                hold_seconds = _c.events.nike_max_bars * 5 * 60   # 12 × 5m = 3600s
+                hold_seconds = _c.events.nike_max_bars_post_bank * 5 * 60
+                def _release(sym=symbol, delay=hold_seconds):
+                    time.sleep(delay)
+                    self._nike_open_symbols.discard(sym)
+                    logging.info(f"NikeConsumer: position window closed for {sym}")
+                threading.Thread(target=_release, daemon=True).start()
+
+                # ── 5. Telegram alert ─────────────────────────────────────
+                try:
+                    msg = (
+                        f"⚡ *NIKE BREAKOUT*\n"
+                        f"`{symbol}` — {sig.date_str}\n\n"
+                        f"Body : `{sig.body_pct:+.2f}%`  ({sig.body_ratio:.1f}× prior avg)\n"
+                        f"Prior quiet : `{sig.avg_prior_pct:.3f}%`\n"
+                        f"Volume spike: `{sig.vol_ratio:.1f}×`\n"
+                        f"Body eff    : `{sig.body_eff:.2f}`\n\n"
+                        f"Entry : `{sig.close:.6g}`\n"
+                        f"TP    : `{sig.tp_price:.6g}`  (+{tp_pct:.2f}%)\n"
+                        f"SL    : `{sig.sl_price:.6g}`  ({sl_pct:.2f}%)\n"
+                        f"Window: `{_c.events.nike_max_bars} bars = "
+                        f"{_c.events.nike_max_bars * 5} min`"
+                    )
+                    msg += (
+                        f"\nTier  : `{sig.tier}` ({sig.entry_mode})"
+                        f"\nScore : `{sig.score:.1f}`  |  Conf: `{sig.confidence:.0f}%`"
+                        f"\nMode  : `{'LIVE' if execute_live else 'OBSERVE'}`"
+                        f"\nWindow v2: `{_c.events.nike_max_bars_pre_bank}/{_c.events.nike_max_bars_post_bank} bars`"
+                    )
+                    self.tg.send(msg)
+                except Exception as te:
+                    logging.debug(f"NikeConsumer Telegram error: {te}")
+
+                logging.info(
+                    f"NikeConsumer: queued {symbol}  "
+                    f"entry={sig.close:.6g}  TP={sig.tp_price:.6g}  SL={sig.sl_price:.6g}  "
+                    f"open_positions={len(self._nike_open_symbols)}"
+                )
+                logging.info(
+                    f"NikeConsumer: metadata {symbol} tier={sig.tier} mode={sig.entry_mode} "
+                    f"score={sig.score:.1f} conf={sig.confidence:.0f}% size_mult={sig.size_mult:.2f} "
+                    f"execute_live={execute_live}"
+                )
+
+            except Exception as e:
+                logging.error(f"NikeConsumer error: {e}", exc_info=True)
+                time.sleep(1.0)
 
     def _telegram_alert_worker(self):
         """Dedicated thread to process and send Telegram alerts instantly (0-latency)"""
@@ -2193,56 +2530,75 @@ class Bot:
                     # ========================================
                     # 📈 BS "TRILLION DOLLAR EQUATION" POWER
                     # ========================================
+                    _feature_bs_prob = 0.5
+                    _bs_fallback_prob = 0.5
+                    _bs_win_prob_baseline = 0.4
+                    _dom_bs = 'athena'
+                    _bs_ctx = {
+                        'prob': 0.5,
+                        'order_prob': 0.5,
+                        'time_prob': 1.0,
+                        'sigma_eff': 0.0,
+                        'tp_dist_live': 0.0,
+                        'sl_dist_live': 0.0,
+                        'bars_live': 48,
+                        'conditional_jump': False,
+                        'source': 'feature_fallback',
+                        'baseline': _bs_win_prob_baseline,
+                        'specialist': _dom_bs,
+                    }
                     try:
-                        # Compute direction-aware BS probability using specialist barriers
-                        # Feature 275 uses median barriers for LONG — we recompute with
-                        # dominant specialist's actual geometry and correct for direction.
-                        _ev = self.cfg.events
-                        _SPEC_BARRIERS_BS = {
-                            'athena':    (_ev.athena_tp_atr,   _ev.athena_sl_atr),
-                            'ares':      (_ev.ares_tp_atr,     _ev.ares_sl_atr),
-                            'hermes':    (_ev.hermes_tp_atr,   _ev.hermes_sl_atr),
-                            'artemis':   (_ev.artemis_tp_atr,  _ev.artemis_sl_atr),
-                            'chronos':   (_ev.chronos_tp_atr,  _ev.chronos_sl_atr),
-                            'hephaestus':(_ev.heph_tp_atr,     _ev.heph_sl_atr),
-                            'nike':      (_ev.nike_tp_atr,     _ev.nike_sl_atr),
-                        }
+                        try:
+                            _feature_bs_prob = float(features_batch[idx][275])
+                        except Exception:
+                            pass
+
+                        _bs_fallback_prob = _feature_bs_prob if ml_dir != 'BEARISH' else (1.0 - _feature_bs_prob)
+                        _bs_ctx['prob'] = float(max(0.0, min(1.0, _bs_fallback_prob)))
+                        _bs_ctx['order_prob'] = _bs_ctx['prob']
+
                         _sp_keys_bs = ['athena', 'ares', 'hermes', 'artemis', 'chronos', 'hephaestus', 'nike']
                         _sp_p = specialist_probs_batch[idx] if specialist_probs_batch is not None else None
                         if _sp_p is not None and len(_sp_p) == 7:
                             _dom_bs = _sp_keys_bs[int(np.argmax(_sp_p))]
-                        else:
-                            _dom_bs = 'athena'
-                        _tp_bs, _sl_bs = _SPEC_BARRIERS_BS[_dom_bs]
 
-                        # Direction-aware BS prob: for SHORTS, swap barriers
-                        # P(TP-short before SL-short) = P(price falls tp_dist before rises sl_dist)
-                        # This is equivalent to computing P(TP before SL) with swapped barriers
-                        bs_prob = float(features_batch[idx][275])  # raw feature (computed for longs)
-                        if ml_dir == -1:
-                            # For shorts: 1 - P(long TP) approximation when barriers are symmetric
-                            # More accurate: use the specialist barrier ratio to adjust
-                            _zero_drift_long = _sl_bs / (_tp_bs + _sl_bs)
-                            _zero_drift_short = _tp_bs / (_tp_bs + _sl_bs)
-                            # Re-center bs_prob around short perspective
-                            # If bs_prob > 0.5 (bull drift), short should be penalized
-                            # If bs_prob < 0.5 (bear drift), short should be boosted
-                            bs_prob = 1.0 - bs_prob  # flip: bear drift → high P for shorts
+                        _atr_bs = float(item['tf_analysis'].get('5m', {}).get('atr', 0.0) or 0.0)
+                        _bs_ctx = self._compute_live_kou_score(
+                            symbol,
+                            price,
+                            _atr_bs,
+                            ml_dir,
+                            _dom_bs,
+                            feature_prob=_feature_bs_prob,
+                        )
 
-                        # BS Veto: Fundamentally reject if stochastic drift probability < 25%
-                        if bs_prob < 0.25:
+                        bs_prob = float(max(0.0, min(1.0, _bs_ctx.get('prob', _bs_fallback_prob))))
+                        _bs_win_prob_baseline = float(max(0.0, min(1.0, _bs_ctx.get('baseline', _bs_win_prob_baseline))))
+                        _bs_veto_floor = max(0.25, _bs_win_prob_baseline)
+                        _bs_turbo_floor = max(0.55, _bs_win_prob_baseline + 0.15)
+
+                        # Reject trades whose live TP-before-SL probability is below
+                        # the specialist's zero-drift baseline.
+                        if bs_prob < _bs_veto_floor:
                             passes_gate = False
                             if idx == 0 and predictions_processed % 50 == 0:
-                                _dir_str = "SHORT" if ml_dir == -1 else "LONG"
-                                print(f"  ⛔ BS VETO: {symbol} {_dir_str} rejected by stochastic drift (P={bs_prob:.2f} < 0.25, spec={_dom_bs})")
+                                print(
+                                    f"  ⛔ BS VETO: {symbol} {ml_dir} rejected "
+                                    f"(P={bs_prob:.2f} < {_bs_veto_floor:.2f}, "
+                                    f"spec={_dom_bs}, src={_bs_ctx.get('source', '?')})"
+                                )
 
-                        # BS Turbo Boost: Sizing Overdrive (multiplies against PPO size)
-                        elif bs_prob > 0.55:
-                            bs_multiplier = min(1.5, bs_prob / 0.50)
+                        # Strong positive barrier math gets a modest sizing boost.
+                        elif bs_prob > _bs_turbo_floor:
+                            bs_multiplier = min(1.5, bs_prob / max(0.50, _bs_win_prob_baseline))
                             ppo_size_mult *= bs_multiplier
                             if passes_gate:
-                                _dir_str = "SHORT" if ml_dir == -1 else "LONG"
-                                print(f"  🚀 BS TURBO: {symbol} {_dir_str} drift favorable (P={bs_prob:.2f}, spec={_dom_bs}), size_mult={ppo_size_mult:.2f}×")
+                                print(
+                                    f"  🚀 BS TURBO: {symbol} {ml_dir} favorable "
+                                    f"(P={bs_prob:.2f}, spec={_dom_bs}, "
+                                    f"src={_bs_ctx.get('source', '?')}), "
+                                    f"size_mult={ppo_size_mult:.2f}×"
+                                )
                     except Exception as e:
                         logging.debug(f"BS power logic error: {e}")
 
@@ -2276,8 +2632,18 @@ class Bot:
                         'ppo_log_prob': ppo_log_prob,
                         'ppo_value': ppo_value,
                         'ppo_size_mult': ppo_size_mult,
+                        'bs_prob': float(max(0.0, min(1.0, _bs_ctx.get('prob', _bs_fallback_prob)))),
+                        'bs_order_prob': float(max(0.0, min(1.0, _bs_ctx.get('order_prob', _bs_fallback_prob)))),
+                        'bs_time_prob': float(max(0.0, min(1.0, _bs_ctx.get('time_prob', 1.0)))),
+                        'bs_baseline': float(max(0.0, min(1.0, _bs_win_prob_baseline))),
+                        'bs_source': _bs_ctx.get('source', 'feature_fallback'),
+                        'bs_specialist': _dom_bs,
                         'shap_summary': None  # v11: filled below
                     }
+                    if _dom_bs == 'nike':
+                        opportunity['specialist'] = 'nike'
+                        opportunity['exit_profile'] = self._build_nike_exit_profile()
+                        opportunity['timeout_bars'] = int(self.cfg.events.nike_max_bars_post_bank)
                     
                     # v11: SHAP feature importance for this prediction
                     if self.shap_explainer and self.ml and self.ml.catboost_model:
@@ -2334,6 +2700,9 @@ class Bot:
                             self._rl_add_times = {k: self._rl_add_times[k] for k in sorted_keys[:5000]}
                     # else: skip RL add (cooldown active), but still allow alerts
                     
+                    if price and hasattr(self, 'paper') and self.paper and item['symbol'] in getattr(self.paper, 'positions', {}):
+                        self.paper.tick(item['symbol'], price)
+
                     # Also send alerts if >= alert threshold AND passes PPO gate
                     if passes_gate and ml_conf >= self.cfg.ml_confidence_min:
                         # Put a shallow copy so mutating 'for_rl' here does NOT corrupt
@@ -2343,7 +2712,6 @@ class Bot:
                         self.result_queue.put(alert_opp)
                     
                     if passes_gate and price and ml_conf >= self.cfg.ml_confidence_min:
-                        self.paper.tick(item['symbol'], price)
                         atr_percent = (item['tf_analysis'].get('4h', {}).get('atr', 0) / price) * 100 if price > 0 else 1
 
                         # ── BS BARRIER R/R + EDGE (Hull Ch.26 / Darling-Siegert 1953) ──
@@ -2359,32 +2727,23 @@ class Bot:
                             'hephaestus':(_ev.heph_tp_atr,     _ev.heph_sl_atr),
                             'nike':      (_ev.nike_tp_atr,     _ev.nike_sl_atr),
                         }
-                        _sp_keys = ['athena', 'ares', 'hermes', 'artemis', 'chronos', 'hephaestus', 'nike']
-                        try:
-                            _sp_probs = specialist_probs_batch[idx] if specialist_probs_batch is not None else None
-                            if _sp_probs is not None and len(_sp_probs) == 7:
-                                _dom_idx = int(np.argmax(_sp_probs))
-                                _dom_key = _sp_keys[_dom_idx]
-                            else:
-                                _dom_key = 'athena'  # median default
-                            _tp_m, _sl_m = _SPEC_BARRIERS[_dom_key]
-                        except Exception:
-                            _tp_m, _sl_m = 1.5, 1.0
+                        _tp_m, _sl_m = _SPEC_BARRIERS.get(_dom_bs, (1.5, 1.0))
 
                         _barrier_rr = _tp_m / max(_sl_m, 1e-6)
-                        _bs_win_prob_baseline = _sl_m / (_tp_m + _sl_m)  # zero-drift
-                        
-                        # Use the live mathematically correct BS prob instead of ML proxy
-                        try:
-                            _live_bs_prob = float(features_batch[idx][275])
-                            _bs_edge = _live_bs_prob - _bs_win_prob_baseline
-                        except Exception:
-                            _bs_edge = (ml_conf / 100.0) - _bs_win_prob_baseline
+                        _bs_win_prob_baseline = float(
+                            max(0.0, min(1.0, _bs_ctx.get('baseline', _sl_m / max(_tp_m + _sl_m, 1e-12))))
+                        )
+                        _live_bs_prob = float(max(0.0, min(1.0, _bs_ctx.get('prob', _bs_fallback_prob))))
+                        _bs_edge = _live_bs_prob - _bs_win_prob_baseline
 
                         self.paper.open_position(item['symbol'], price, ml_dir, ml_conf, atr_percent,
                                                  ppo_size_mult=ppo_size_mult,
                                                  barrier_rr=_barrier_rr,
-                                                 bs_edge=_bs_edge)
+                                                 bs_edge=_bs_edge,
+                                                 bs_prob=_live_bs_prob,
+                                                 specialist=_dom_bs,
+                                                 exit_profile=self._build_nike_exit_profile() if _dom_bs == 'nike' else None,
+                                                 timeout_bars=int(self.cfg.events.nike_max_bars_post_bank) if _dom_bs == 'nike' else None)
                         # v11.5: Store specialist probs for Brier score tracking at close
                         if specialist_probs_batch is not None and item['symbol'] in self.paper.positions:
                             self.paper.positions[item['symbol']]['specialist_probs'] = specialist_probs_batch[idx].copy()
@@ -3468,7 +3827,31 @@ class Bot:
                 
                 # Start WS event loop
                 self.ws_producer.start()
-                
+
+                # ── Nike Screener (market-wide breakout scanner) ───────────
+                if NIKE_SCREENER_AVAILABLE:
+                    try:
+                        all_futures = self.bnc.get_pairs()   # all USDT perpetuals
+                        proxy_url   = None
+                        try:
+                            from quanta_proxy import ProxyManager
+                            proxy_url = ProxyManager.get_proxy()
+                        except Exception:
+                            pass
+                        self.nike_screener = NikeScreener(
+                            symbols   = all_futures or symbols,
+                            proxy_url = proxy_url,
+                        )
+                        self.nike_screener.start()
+                        threading.Thread(
+                            target=self._nike_signal_consumer,
+                            daemon=True,
+                            name="NikeConsumer",
+                        ).start()
+                        print(f"✅ NikeScreener active — watching {len(all_futures or symbols)} symbols")
+                    except Exception as _ne:
+                        print(f"⚠️  NikeScreener failed to start: {_ne}")
+
                 # Main thread blocks here while keeping 90s stats loop alive
                 print("\n🚀 QUANTA HFT PIPELINE ACTIVE (Event-Driven / No REST polling)\n")
                 

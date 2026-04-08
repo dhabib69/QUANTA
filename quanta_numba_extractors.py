@@ -69,12 +69,18 @@ _HEP_SL_ATR = _ev.heph_sl_atr
 _HEP_MAX_BARS = _ev.heph_max_bars
 
 # ── Nike ──
-_NIKE_BODY_MIN = _ev.nike_body_min
-_NIKE_ATR_MULT = _ev.nike_atr_mult
-_NIKE_VOL_MULT = _ev.nike_vol_mult
-_NIKE_TP_ATR = _ev.nike_tp_atr
-_NIKE_SL_ATR = _ev.nike_sl_atr
-_NIKE_MAX_BARS = _ev.nike_max_bars
+_NIKE_BODY_MIN        = _ev.nike_body_min
+_NIKE_BODY_RATIO_MULT = _ev.nike_body_ratio_mult
+_NIKE_BODY_LOOKBACK   = _ev.nike_body_lookback
+_NIKE_QUIET_BODY_PCT  = _ev.nike_quiet_body_pct / 100.0   # convert % → fraction
+_NIKE_VOL_MULT        = _ev.nike_vol_mult
+_NIKE_IMMEDIATE_BODY_RATIO_MULT = _ev.nike_immediate_body_ratio_mult
+_NIKE_IMMEDIATE_BODY_MIN        = _ev.nike_immediate_body_min
+_NIKE_IMMEDIATE_VOL_MULT        = _ev.nike_immediate_vol_mult
+_NIKE_CONTINUATION_VOL_MULT     = _ev.nike_continuation_vol_mult
+_NIKE_TP_ATR          = _ev.nike_tp_atr
+_NIKE_SL_ATR          = _ev.nike_sl_atr
+_NIKE_MAX_BARS        = _ev.nike_max_bars
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -417,53 +423,161 @@ def fast_extract_hephaestus(closes, highs, lows, atrs, atr_pct, orig_idx):
 # ═══════════════════════════════════════════════════════════════════
 
 @njit
-def fast_extract_nike(closes, highs, lows, atrs, atr_pct, volumes, vol_avg, orig_idx):
-    """Nike: Impulse Continuation — single-candle explosive moves.
-    No CUSUM needed. Fires when a candle has:
-      1. Range > k1 × ATR  (explosive size)
-      2. Volume > k2 × avg  (volume confirms)
-      3. Body efficiency > 0.5  (not a doji)
-    Both bull and bear impulses. Direction from sign(close - open).
+def fast_extract_nike(closes, highs, lows, opens, atrs, volumes, vol_avg20, orig_idx):
+    """Nike: Tiered breakout detector (v12.0).
+
+    Tier A:
+      - same-bar entry when the setup candle is already extreme
+    Tier B:
+      - one-bar-later entry when the next candle confirms the setup
+    Tier C:
+      - two-bar continuation after the setup if follow-through persists and
+        the entry bar volume does not collapse
     """
     N = len(closes)
-    out_pos = np.zeros(N, dtype=np.int64)
+    out_pos    = np.zeros(N, dtype=np.int64)
     out_labels = np.zeros(N, dtype=np.int32)
-    out_weights = np.zeros(N, dtype=np.float64)
-    count = 0
+    out_weights= np.zeros(N, dtype=np.float64)
+    count      = 0
+    last_pos   = -_MIN_GAP
+    lookback   = _NIKE_BODY_LOOKBACK
 
-    last_pos = -_MIN_GAP
+    for i in range(lookback + 1, N):
+        if i - last_pos < _MIN_GAP:
+            continue
 
-    for i in range(_LOOKBACK, N):
-        if i - last_pos < _MIN_GAP: continue
-
+        body_i = closes[i] - opens[i]
+        avg_body = 0.0
+        for j in range(i - lookback, i):
+            avg_body += abs(closes[j] - opens[j])
+        avg_body /= lookback
         candle_range = highs[i] - lows[i]
-        if candle_range <= 0.0: continue
+        body_eff = body_i / candle_range if candle_range > 0.0 else 0.0
+        body_ratio = body_i / avg_body if avg_body > 0.0 else 0.0
+        quiet_ok = opens[i] > 0.0 and avg_body / opens[i] <= _NIKE_QUIET_BODY_PCT
+        vol_ratio = volumes[i] / vol_avg20[i] if vol_avg20[i] > 0.0 else 0.0
 
-        # Condition 1: explosive candle range relative to ATR
-        if atrs[i] <= 0.0: continue
-        if candle_range < _NIKE_ATR_MULT * atrs[i]: continue
+        setup_ok = (
+            body_i > 0.0 and
+            body_i / (opens[i] + 1e-12) >= 0.01 and
+            avg_body > 0.0 and
+            body_eff >= _NIKE_BODY_MIN and
+            body_ratio >= _NIKE_BODY_RATIO_MULT and
+            quiet_ok and
+            vol_ratio >= _NIKE_VOL_MULT
+        )
 
-        # Condition 2: volume confirms
-        if vol_avg[i] <= 0.0: continue
-        if volumes[i] < _NIKE_VOL_MULT * vol_avg[i]: continue
+        if setup_ok:
+            immediate_ok = (
+                body_eff >= _NIKE_IMMEDIATE_BODY_MIN and
+                body_ratio >= _NIKE_IMMEDIATE_BODY_RATIO_MULT and
+                vol_ratio >= _NIKE_IMMEDIATE_VOL_MULT
+            )
+            if immediate_ok:
+                label, weight = fast_triple_barrier_label(
+                    closes, highs, lows, atrs, i,
+                    1, _NIKE_TP_ATR, _NIKE_SL_ATR, _NIKE_MAX_BARS
+                )
+                if label != -1:
+                    out_pos[count]    = orig_idx[i]
+                    out_labels[count] = label
+                    out_weights[count]= weight
+                    count    += 1
+                    last_pos  = i
+                    continue
 
-        # Condition 3: clean body (not a doji/hammer)
-        body = abs(closes[i] - closes[i - 1])  # Use close-to-close for open proxy
-        body_eff = body / candle_range
-        if body_eff < _NIKE_BODY_MIN: continue
+        # Tier B: one-bar-later confirmation from setup_idx = i - 1.
+        setup_idx = i - 1
+        if setup_idx >= lookback:
+            setup_body = closes[setup_idx] - opens[setup_idx]
+            setup_range = highs[setup_idx] - lows[setup_idx]
+            setup_eff = setup_body / setup_range if setup_range > 0.0 else 0.0
+            setup_avg_body = 0.0
+            for j in range(setup_idx - lookback, setup_idx):
+                setup_avg_body += abs(closes[j] - opens[j])
+            setup_avg_body /= lookback
+            setup_ratio = setup_body / setup_avg_body if setup_avg_body > 0.0 else 0.0
+            setup_quiet_ok = opens[setup_idx] > 0.0 and setup_avg_body / opens[setup_idx] <= _NIKE_QUIET_BODY_PCT
+            setup_vol_ratio = volumes[setup_idx] / vol_avg20[setup_idx] if vol_avg20[setup_idx] > 0.0 else 0.0
 
-        # Direction from close vs previous close
-        direction = 1 if closes[i] > closes[i - 1] else -1
+            prev_setup_ok = (
+                setup_body > 0.0 and
+                setup_body / (opens[setup_idx] + 1e-12) >= 0.01 and
+                setup_avg_body > 0.0 and
+                setup_eff >= _NIKE_BODY_MIN and
+                setup_ratio >= _NIKE_BODY_RATIO_MULT and
+                setup_quiet_ok and
+                setup_vol_ratio >= _NIKE_VOL_MULT
+            )
+            if prev_setup_ok:
+                setup_mid = 0.5 * (opens[setup_idx] + closes[setup_idx])
+                confirm_ok = (
+                    lows[i] >= setup_mid and
+                    closes[i] >= closes[setup_idx] and
+                    highs[i] >= highs[setup_idx]
+                )
+                if confirm_ok:
+                    label, weight = fast_triple_barrier_label(
+                        closes, highs, lows, atrs, i,
+                        1, _NIKE_TP_ATR, _NIKE_SL_ATR, _NIKE_MAX_BARS
+                    )
+                    if label != -1:
+                        out_pos[count]    = orig_idx[i]
+                        out_labels[count] = label
+                        out_weights[count]= weight
+                        count    += 1
+                        last_pos  = i
+                        continue
+
+        # Tier C: two-bar continuation from setup_idx = i - 2.
+        setup_idx = i - 2
+        confirm1_idx = i - 1
+        if setup_idx < lookback:
+            continue
+
+        setup_body = closes[setup_idx] - opens[setup_idx]
+        setup_range = highs[setup_idx] - lows[setup_idx]
+        setup_eff = setup_body / setup_range if setup_range > 0.0 else 0.0
+        setup_avg_body = 0.0
+        for j in range(setup_idx - lookback, setup_idx):
+            setup_avg_body += abs(closes[j] - opens[j])
+        setup_avg_body /= lookback
+        setup_ratio = setup_body / setup_avg_body if setup_avg_body > 0.0 else 0.0
+        setup_quiet_ok = opens[setup_idx] > 0.0 and setup_avg_body / opens[setup_idx] <= _NIKE_QUIET_BODY_PCT
+        setup_vol_ratio = volumes[setup_idx] / vol_avg20[setup_idx] if vol_avg20[setup_idx] > 0.0 else 0.0
+
+        prev2_setup_ok = (
+            setup_body > 0.0 and
+            setup_body / (opens[setup_idx] + 1e-12) >= 0.01 and
+            setup_avg_body > 0.0 and
+            setup_eff >= _NIKE_BODY_MIN and
+            setup_ratio >= _NIKE_BODY_RATIO_MULT and
+            setup_quiet_ok and
+            setup_vol_ratio >= _NIKE_VOL_MULT
+        )
+        if not prev2_setup_ok:
+            continue
+
+        setup_mid = 0.5 * (opens[setup_idx] + closes[setup_idx])
+        entry_vol_ratio = volumes[i] / vol_avg20[i] if vol_avg20[i] > 0.0 else 0.0
+        continuation_ok = (
+            lows[confirm1_idx] >= setup_mid and
+            closes[i] >= closes[setup_idx] and
+            highs[i] >= highs[setup_idx] and
+            entry_vol_ratio >= _NIKE_CONTINUATION_VOL_MULT
+        )
+        if not continuation_ok:
+            continue
 
         label, weight = fast_triple_barrier_label(
             closes, highs, lows, atrs, i,
-            direction, _NIKE_TP_ATR, _NIKE_SL_ATR, _NIKE_MAX_BARS
+            1, _NIKE_TP_ATR, _NIKE_SL_ATR, _NIKE_MAX_BARS
         )
         if label != -1:
-            out_pos[count] = orig_idx[i]
+            out_pos[count]    = orig_idx[i]
             out_labels[count] = label
-            out_weights[count] = weight
-            count += 1
-            last_pos = i
+            out_weights[count]= weight
+            count    += 1
+            last_pos  = i
 
     return out_pos[:count], out_labels[:count], out_weights[:count]

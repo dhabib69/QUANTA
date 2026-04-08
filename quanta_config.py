@@ -275,18 +275,61 @@ class EventExtractionConfig:
     heph_sl_atr: float = 0.8
     heph_max_bars: int = 48              # 4h
 
-    # ── Nike: Impulse Continuation (NEW v11.5b) ──
-    # Single-candle explosive moves — no CUSUM needed.
-    # Detects sudden impulses (news, liquidations, whale entries) and
-    # predicts whether they continue or die.
-    # Trigger: candle_range > k × ATR AND volume > k × SMA AND body > 50%.
-    # Both bull and bear impulses. Resolves faster than trend events.
-    nike_body_min: float = 0.5           # Min body efficiency |C-O|/(H-L) — reject dojis
-    nike_atr_mult: float = 2.0           # Candle range > 2.0× ATR_20
-    nike_vol_mult: float = 1.5           # Volume > 1.5× SMA(vol, 20)
-    nike_tp_atr: float = 2.0             # Wide TP for runners
-    nike_sl_atr: float = 0.8             # Tight SL — cut fast if impulse dies
-    nike_max_bars: int = 36              # 3h @ 5m (impulses resolve faster than trends)
+    # ── Nike: Anomalous First Candle Breakout (v11.7) ──
+    # Catches the first anomalous candle that kicks off a new pump run.
+    # Based on empirical analysis of 87,669 breakout events:
+    #   - Prior consolidation avg body: ~0.36% per bar
+    #   - Anomalous candle body: 5.6× avg prior body on average
+    #   - Volume spike: ~5.8× 20-bar avg
+    #   - Median run-up to actual top: +1.39%, avg +2.70%
+    #   - Median time to top: 12 bars = 60 min
+    # Trigger architecture (v12.0):
+    #   1. Setup candle: quiet-base bullish anomaly with moderate volume/body thresholds
+    #   2. Immediate entry if the setup candle is already extreme
+    #   3. Otherwise wait one bar for confirmation:
+    #        - next low holds above the setup midpoint
+    #        - next close stays above the setup close
+    #        - next high breaks the setup high
+    #   4. Aggressive continuation tier:
+    #        - setup bar still meets the relaxed anomaly rule
+    #        - first follow-through bar keeps the setup midpoint intact
+    #        - second follow-through bar closes above setup close and breaks setup high
+    #        - entry bar volume must not collapse below 1.0x its 20-bar average
+    # This matches the "ignition -> confirm -> acceleration" pattern seen in
+    # SWARMS / JOE / BULLA-style expansions.
+    nike_body_min: float = 0.4           # Setup body efficiency |C-O|/(H-L) — allow broader ignition candles
+    nike_body_ratio_mult: float = 5.0    # Setup body > 5× avg body — tuned to cache spike events
+    nike_body_lookback: int = 20         # Bars to compute avg body for anomaly detection
+    nike_quiet_body_pct: float = 0.5     # Prior avg body must be < 0.5% of price (quiet regime)
+    nike_vol_mult: float = 1.5           # Setup volume > 1.5× SMA(vol, 20) — catches ignition earlier
+    nike_immediate_body_ratio_mult: float = 8.0   # Same-bar entry only if the setup candle is clearly explosive
+    nike_immediate_body_min: float = 0.55         # Same-bar entry still requires a cleaner body
+    nike_immediate_vol_mult: float = 2.0          # Same-bar entry keeps stronger volume confirmation
+    nike_continuation_vol_mult: float = 1.0       # Tier-C continuation rejects entries when volume collapses
+    nike_score_body_ratio_weight: float = 0.30
+    nike_score_vol_ratio_weight: float = 0.25
+    nike_score_body_eff_weight: float = 0.20
+    nike_score_quiet_weight: float = 0.10
+    nike_score_confirm_weight: float = 0.15
+    nike_tier_a_confidence: float = 84.0
+    nike_tier_b_confidence: float = 78.0
+    nike_tier_c_confidence: float = 72.0
+    nike_tier_a_size_mult: float = 1.15
+    nike_tier_b_size_mult: float = 1.00
+    nike_tier_c_size_mult: float = 0.75
+    nike_tier_b_bs_floor: float = 0.30
+    nike_tier_c_bs_floor: float = 0.35
+    nike_tier_a_live: bool = True
+    nike_tier_b_live: bool = False
+    nike_tier_c_live: bool = False
+    nike_tp_atr: float = 2.0             # TP: 2× ATR — median run-up is +1.4%, mean +2.7%
+    nike_sl_atr: float = 0.8             # Tight SL — if no follow-through, exit fast
+    nike_max_bars: int = 24              # Legacy single-timeout; kept aligned with pre-bank window
+    nike_bank_atr: float = 2.0           # Bank partial profits at +2 ATR
+    nike_bank_fraction: float = 0.50     # Close half, keep half for runner mode
+    nike_runner_trail_atr: float = 1.5   # Runner trail after banking profits
+    nike_max_bars_pre_bank: int = 24     # Hard timeout if no bank by 2h
+    nike_max_bars_post_bank: int = 36    # Hard close the runner after 3h
 
 
 @dataclass
@@ -669,9 +712,9 @@ def update_config_from_overrides():
                             setattr(category_obj, key, bool(val))
                         else:
                             setattr(category_obj, key, val)
-            print(f"⚙️ Loaded JSON config overrides from dashboard")
+            print(f"\u2699\ufe0f Loaded JSON config overrides from dashboard".encode('utf-8', errors='replace').decode('utf-8'))
         except Exception as e:
-            print(f"⚠️ Failed to load config overrides: {e}")
+            pass  # Silently skip if overrides cannot be loaded
 
 def export_config_to_dict():
     import dataclasses

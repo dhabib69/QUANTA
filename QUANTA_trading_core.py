@@ -367,7 +367,8 @@ class PaperTrading:
                 writer.writerow(['symbol', 'entry_price', 'exit_price', 'direction', 'pnl', 'time'])
 
     def open_position(self, symbol, entry_price, direction, confidence, atr_percent,
-                      ppo_size_mult=1.0, barrier_rr=2.0, bs_edge=None):
+                      ppo_size_mult=1.0, barrier_rr=2.0, bs_edge=None, bs_prob=None,
+                      specialist=None, exit_profile=None, timeout_bars=None):
         """
         Open a paper position.
 
@@ -378,16 +379,30 @@ class PaperTrading:
 
         barrier_rr — TP/SL distance ratio for this specialist (Hull Ch.26).
                      Replaces hardcoded 2.0; passed from bot per specialist config.
-        bs_edge    — ML confidence minus random-walk baseline P(TP).
+        bs_edge    — Live BS/Kou edge minus random-walk baseline P(TP).
                      If < 0.02 (< 2% alpha), probability is penalised.
+        bs_prob    — Live BS/Kou TP-before-SL probability. Blended with ML
+                     confidence before Kelly sizing so execution math directly
+                     affects capital allocation.
+        specialist — dominant specialist key for this trade.
+        exit_profile — optional specialist-specific exit config persisted on the position.
+        timeout_bars — optional specialist-specific timeout metadata.
         """
         if symbol in self.positions:
             return
 
-        # Meta-Labeling: Convert CatBoost confidence to mathematical probability
-        prob = max(0.51, min(0.99, confidence / 100.0))  # Only trade above 51% (edge)
+        # Blend ML confidence with the live barrier probability before sizing.
+        prob_ml = max(0.51, min(0.99, confidence / 100.0))
+        prob = prob_ml
+        if bs_prob is not None:
+            try:
+                prob_bs = max(0.01, min(0.99, float(bs_prob)))
+                prob = max(0.51, min(0.99, 0.65 * prob_ml + 0.35 * prob_bs))
+            except Exception:
+                prob = prob_ml
 
-        # BS Edge filter (Hull Ch.26 / Darling-Siegert): penalise when ML barely beats random walk.
+        # BS Edge filter (Hull Ch.26 / Darling-Siegert): penalise when live barrier math
+        # barely beats the specialist's zero-drift baseline.
         # Threshold 0.02 (2%) — local heuristic, similar to DIRECTION_THRESHOLD=0.12.
         if bs_edge is not None and bs_edge < 0.02:
             edge_penalty = max(0.5, min(1.0, bs_edge / 0.10))
@@ -439,16 +454,24 @@ class PaperTrading:
 
         # Route through TWAP if large order (>$500), otherwise use market order simulation
         if total_notional >= 500:
-            self.executor.execute_twap(symbol, direction, total_notional, entry_price, steps=5, duration_mins=2.0, confidence=confidence, atr_percent=atr_percent)
+            self.executor.execute_twap(symbol, direction, total_notional, entry_price,
+                                       steps=5, duration_mins=2.0,
+                                       confidence=confidence, atr_percent=atr_percent,
+                                       specialist=specialist, exit_profile=exit_profile,
+                                       timeout_bars=timeout_bars)
             # Metadata is now handled inside _execute_market_order via executor slices
         else:
-            self._execute_market_order(symbol, direction, total_notional, entry_price, confidence, atr_percent)
+            self._execute_market_order(symbol, direction, total_notional, entry_price,
+                                       confidence, atr_percent,
+                                       specialist=specialist, exit_profile=exit_profile,
+                                       timeout_bars=timeout_bars)
 
         # Track in risk manager
         self.risk_manager.on_trade_opened(symbol, total_notional)
         self._save_state()  # Ensure open positions are persisted immediately
 
-    def _execute_market_order(self, symbol, side, chunk_notional, step_price, confidence=0, atr_percent=0):
+    def _execute_market_order(self, symbol, side, chunk_notional, step_price, confidence=0, atr_percent=0,
+                              specialist=None, exit_profile=None, timeout_bars=None):
         """Simulate execution of a market order chunk with realistic cost model."""
         from quanta_config import Config as _cfg
         _bt = getattr(_cfg, 'backtest', None)
@@ -478,30 +501,74 @@ class PaperTrading:
             # Update metadata if provided
             if confidence > 0: self.positions[symbol]['confidence'] = confidence
             if atr_percent > 0: self.positions[symbol]['atr_percent'] = atr_percent
+            if specialist:
+                self.positions[symbol]['specialist'] = specialist
+            if exit_profile:
+                self.positions[symbol]['exit_profile'] = exit_profile
+            if timeout_bars is not None:
+                self.positions[symbol]['timeout_bars'] = timeout_bars
         else:
             # Compute ATR-based barrier prices at entry
             atr_move = fill_price * (atr_percent / 100.0)
-            if side == 'BULLISH':
+            specialist_key = str(specialist or "").lower()
+            exit_profile = exit_profile or {}
+            is_nike_v2 = (
+                specialist_key == 'nike' and
+                isinstance(exit_profile, dict) and
+                exit_profile.get('mode') == 'nike_v2' and
+                side == 'BULLISH'
+            )
+
+            if is_nike_v2:
+                bank_atr = float(exit_profile.get('bank_atr', 2.0))
+                sl_atr = float(exit_profile.get('sl_atr', 0.8))
+                bank_fraction = float(exit_profile.get('bank_fraction', 0.5))
+                runner_trail_atr = float(exit_profile.get('runner_trail_atr', 1.5))
+                max_pre = int(exit_profile.get('max_bars_pre_bank', timeout_bars or 24))
+                max_post = int(exit_profile.get('max_bars_post_bank', max_pre))
+                _tp1 = fill_price + atr_move * bank_atr
+                _tp2 = _tp1
+                _tp3 = _tp1
+                _sl = fill_price - atr_move * sl_atr
+            elif side == 'BULLISH':
                 _tp1 = fill_price + atr_move * TP1_RATIO
                 _tp2 = fill_price + atr_move * TP2_RATIO
                 _tp3 = fill_price + atr_move * TP3_RATIO
                 _sl  = fill_price - atr_move * SL_RATIO
+                bank_fraction = 0.0
+                runner_trail_atr = 3.0
+                max_pre = int(timeout_bars or 0)
+                max_post = int(timeout_bars or 0)
             else:
                 _tp1 = fill_price - atr_move * TP1_RATIO
                 _tp2 = fill_price - atr_move * TP2_RATIO
                 _tp3 = fill_price - atr_move * TP3_RATIO
                 _sl  = fill_price + atr_move * SL_RATIO
+                bank_fraction = 0.0
+                runner_trail_atr = 3.0
+                max_pre = int(timeout_bars or 0)
+                max_post = int(timeout_bars or 0)
 
             self.positions[symbol] = {
                 'entry': fill_price, 'size': size, 'direction': side,
                 'confidence': confidence, 'atr_percent': atr_percent,
                 'time': datetime.now(),
                 'entry_unix': time.time(),  # BS: for bars-to-hit tracking
+                'specialist': specialist_key or None,
+                'exit_profile': exit_profile if isinstance(exit_profile, dict) else {},
+                'timeout_bars': timeout_bars,
                 'specialist_probs': None,   # v11.5: Set by bot for Brier tracking
                 # ATR-based barrier levels (v11.6)
                 'tp1_price': _tp1, 'tp2_price': _tp2, 'tp3_price': _tp3, 'sl_price': _sl,
                 # Partial close state (v11.6)
-                'tp1_hit': False, 'tp2_hit': False,
+                'tp1_hit': False, 'tp2_hit': False, 'tp3_hit': False,
+                'nike_bank_hit': False,
+                'nike_bank_fraction': bank_fraction,
+                'nike_bank_price': _tp1,
+                'nike_runner_trail_atr': runner_trail_atr,
+                'nike_runner_peak': fill_price,
+                'max_bars_pre_bank': max_pre,
+                'max_bars_post_bank': max_post,
                 'original_size': size,  # for win/loss labeling after partial closes
             }
 
@@ -538,10 +605,9 @@ class PaperTrading:
             is_final_close = not partial
             if is_final_close:
                 self.total_trades += 1
-                tp1_was_hit = pos.get('tp1_hit', False)
-                tp3_was_hit = pos.get('tp3_hit', False)
+                tp1_was_hit = pos.get('tp1_hit', False) or pos.get('nike_bank_hit', False)
                 # Win if: pnl > 0, OR SL fired but TP1 already banked, OR chandelier SL (TP1+2+3 all banked)
-                if pnl > 0 or (barrier_hit in ('SL', 'SL_AUTO') and tp1_was_hit) or barrier_hit == 'CHANDELIER_SL':
+                if pnl > 0 or (barrier_hit in ('SL', 'SL_AUTO', 'TIMEOUT', 'NIKE_RUNNER_TIMEOUT') and tp1_was_hit) or barrier_hit == 'CHANDELIER_SL':
                     self.total_wins += 1
                 else:
                     self.total_losses += 1
@@ -553,7 +619,8 @@ class PaperTrading:
             # v11.4: Notify risk manager + paper logger (only on final close)
             if is_final_close:
                 # For RL/risk: treat SL-after-TP1 and CHANDELIER_SL as positive outcome
-                reported_pnl = abs(pnl) if (barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL') and pos.get('tp1_hit', False)) else pnl
+                banked_win = pos.get('tp1_hit', False) or pos.get('nike_bank_hit', False)
+                reported_pnl = abs(pnl) if (barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL', 'TIMEOUT', 'NIKE_RUNNER_TIMEOUT') and banked_win) else pnl
                 self.risk_manager.on_trade_closed(symbol, reported_pnl, self.balance)
             self.paper_logger.log_trade_closed(
                 symbol=symbol, direction=pos['direction'],
@@ -566,8 +633,8 @@ class PaperTrading:
 
             # v11.5: Update per-agent Brier score calibration (final close only)
             if is_final_close and pos.get('specialist_probs') is not None and hasattr(self, '_ml_engine') and self._ml_engine:
-                tp1_was_hit = pos.get('tp1_hit', False)
-                outcome = 1 if (pnl > 0 or (barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL') and tp1_was_hit) or barrier_hit == 'CHANDELIER_SL') else 0
+                tp1_was_hit = pos.get('tp1_hit', False) or pos.get('nike_bank_hit', False)
+                outcome = 1 if (pnl > 0 or (barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL', 'TIMEOUT', 'NIKE_RUNNER_TIMEOUT') and tp1_was_hit) or barrier_hit == 'CHANDELIER_SL') else 0
                 try:
                     self._ml_engine.update_brier_scores(pos['specialist_probs'], outcome)
                 except Exception:
@@ -576,10 +643,10 @@ class PaperTrading:
             # v11.5b: Link trade result to RL memory for PPO training (final close only)
             if is_final_close and self._rl_memory:
                 try:
-                    tp1_was_hit = pos.get('tp1_hit', False)
+                    tp1_was_hit = pos.get('tp1_hit', False) or pos.get('nike_bank_hit', False)
                     # Correct barrier label: SL-after-TP1 should not penalize RL
                     effective_barrier = barrier_hit
-                    if barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL') and tp1_was_hit:
+                    if barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL', 'TIMEOUT', 'NIKE_RUNNER_TIMEOUT') and tp1_was_hit:
                         effective_barrier = 'TP1'  # treat as partial win for PPO reward
                     orig_size = pos.get('original_size', close_size)
                     pnl_pct = (pnl / (pos['entry'] * orig_size)) * 100 if pos['entry'] * orig_size > 0 else 0
@@ -592,7 +659,7 @@ class PaperTrading:
                     logging.debug(f"Could not link trade to RL memory: {e}")
 
             # BS implied vol tracking (final close only)
-            if is_final_close and barrier_hit in ('TP1', 'TP2', 'TP3', 'SL', 'TP_AUTO', 'SL_AUTO', 'CHANDELIER_SL'):
+            if is_final_close and barrier_hit in ('TP1', 'TP2', 'TP3', 'SL', 'TP_AUTO', 'SL_AUTO', 'CHANDELIER_SL', 'NIKE_RUNNER_TIMEOUT'):
                 try:
                     from collections import deque as _deque
                     entry_unix = pos.get('entry_unix', 0)
@@ -631,12 +698,84 @@ class PaperTrading:
             return None
         return float(sum(dq) / len(dq))
 
+    def _is_nike_v2_position(self, pos):
+        profile = pos.get('exit_profile', {})
+        return (
+            str(pos.get('specialist', '')).lower() == 'nike' and
+            pos.get('direction') == 'BULLISH' and
+            isinstance(profile, dict) and
+            profile.get('mode') == 'nike_v2'
+        )
+
+    def _tick_nike_v2(self, symbol, current_price):
+        pos = self.positions.get(symbol)
+        if not pos:
+            return
+
+        atr_move = pos['entry'] * (pos.get('atr_percent', 1.0) / 100.0)
+        if atr_move <= 0:
+            self.risk_manager.heartbeat(self.balance)
+            return
+
+        bank_fraction = float(pos.get('nike_bank_fraction', 0.5))
+        bank_price = float(pos.get('nike_bank_price', pos['entry'] + 2.0 * atr_move))
+        max_pre = int(pos.get('max_bars_pre_bank', pos.get('timeout_bars') or 24))
+        max_post = int(pos.get('max_bars_post_bank', max_pre))
+        trail_atr = float(pos.get('nike_runner_trail_atr', 1.5))
+        bars_elapsed = max(0.0, (time.time() - pos.get('entry_unix', time.time())) / 300.0)
+
+        if not pos.get('nike_bank_hit', False):
+            if current_price <= pos.get('sl_price', pos['entry'] - 0.8 * atr_move):
+                self.close_position(symbol, current_price, barrier_hit='SL')
+                self.risk_manager.heartbeat(self.balance)
+                return
+
+            if current_price >= bank_price:
+                self.close_position(symbol, current_price, barrier_hit='TP1',
+                                    partial=True, partial_fraction=bank_fraction)
+                if symbol in self.positions:
+                    self.positions[symbol]['nike_bank_hit'] = True
+                    self.positions[symbol]['tp1_hit'] = True
+                    self.positions[symbol]['nike_runner_peak'] = current_price
+                    self.positions[symbol]['sl_price'] = self.positions[symbol]['entry']
+                self.risk_manager.heartbeat(self.balance)
+                return
+
+            if bars_elapsed >= max_pre:
+                self.close_position(symbol, current_price, barrier_hit='TIMEOUT')
+                self.risk_manager.heartbeat(self.balance)
+                return
+
+            self.risk_manager.heartbeat(self.balance)
+            return
+
+        new_peak = max(pos.get('nike_runner_peak', current_price), current_price)
+        trail_stop = max(pos.get('sl_price', pos['entry']), pos['entry'], new_peak - atr_move * trail_atr)
+        self.positions[symbol]['nike_runner_peak'] = new_peak
+        self.positions[symbol]['sl_price'] = trail_stop
+
+        if current_price <= trail_stop:
+            self.close_position(symbol, current_price, barrier_hit='CHANDELIER_SL')
+            self.risk_manager.heartbeat(self.balance)
+            return
+
+        if bars_elapsed >= max_post:
+            self.close_position(symbol, current_price, barrier_hit='NIKE_RUNNER_TIMEOUT')
+            self.risk_manager.heartbeat(self.balance)
+            return
+
+        self.risk_manager.heartbeat(self.balance)
+
     def tick(self, symbol, current_price):
         # v11.6: ATR-based 3-tier TP with partial closes and Chandelier trailing after TP3
         if symbol not in self.positions:
             return
         pos = self.positions[symbol]
         direction = pos['direction']
+
+        if self._is_nike_v2_position(pos):
+            self._tick_nike_v2(symbol, current_price)
+            return
 
         # Retrieve stored barrier levels (fallback to old hardcoded logic if missing)
         tp1 = pos.get('tp1_price')

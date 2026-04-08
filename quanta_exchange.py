@@ -1651,7 +1651,8 @@ class SmartExecutor:
         self.exchange = exchange
         self.bot = bot
 
-    def execute_twap(self, symbol, side, total_notional, current_price, steps=5, duration_mins=2.0, confidence=0, atr_percent=0):
+    def execute_twap(self, symbol, side, total_notional, current_price, steps=5, duration_mins=2.0,
+                     confidence=0, atr_percent=0, specialist=None, exit_profile=None, timeout_bars=None):
         """Execute a large order using Time-Weighted Average Price (TWAP).
         
         Args:
@@ -1669,7 +1670,9 @@ class SmartExecutor:
         if total_notional < (MIN_CHUNK * steps):
             print(f"⚡ {symbol} TWAP canceled - order size ${total_notional:.2f} is too small. Using Market Order.")
             if self.bot:
-                self.bot._execute_market_order(symbol, side, total_notional, current_price, confidence, atr_percent)
+                self.bot._execute_market_order(symbol, side, total_notional, current_price, confidence, atr_percent,
+                                               specialist=specialist, exit_profile=exit_profile,
+                                               timeout_bars=timeout_bars)
             return True
             
         chunk_notional = total_notional / steps
@@ -1693,7 +1696,9 @@ class SmartExecutor:
                 print(f"   [{i+1}/{steps}] Executing {side} ${chunk_notional:.2f} {symbol} @ ~{step_price}")
                 
                 if self.bot:
-                    self.bot._execute_market_order(symbol, side, chunk_notional, step_price, confidence, atr_percent)
+                    self.bot._execute_market_order(symbol, side, chunk_notional, step_price, confidence, atr_percent,
+                                                   specialist=specialist, exit_profile=exit_profile,
+                                                   timeout_bars=timeout_bars)
                 
                 executed_notional += chunk_notional
                 

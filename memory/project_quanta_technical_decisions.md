@@ -4,6 +4,15 @@ description: Important design decisions, known gotchas, and critical implementat
 type: project
 ---
 
+## Conditional Kou First-Passage For Nike Trigger Entries (2026-04-07)
+- For Nike, the relevant barriers are `TP = 2.0 * ATR`, `SL = 0.8 * ATR`, `T = 12` bars.
+- If the trigger jump has already occurred and price starts at `b+ - eps`, the correct conditional probability is the same Kou process restarted from the post-jump state. Conditioning changes the start point, not the future law.
+- In shifted coordinates with interval `(0, a)`, use `a = log((entry + 2.0 * ATR) / (entry - 0.8 * ATR))` and `y0 = a - eps` when working in log-price units.
+- Fast approximation: ignore the far lower barrier and use the one-sided Kou-Wang Laplace-transform formula on residual distance `eps`.
+- Tight method: solve the finite-horizon backward PIDE on `(0, a)` and evaluate `u(T, y0)`.
+- Current `_jit_kou_barrier_prob` in `quanta_features.py` is an infinite-horizon effective-diffusion heuristic. It is acceptable for feature 275 but should not be treated as the exact finite-horizon conditional Nike score.
+- The post-trigger research note lives in `memory/kou_first_passage_conditional_note.md`.
+
 ## Critical Constants (quanta_config.py)
 - `base_feature_count = 278` — single source of truth. All code reads `self.cfg.BASE_FEATURE_COUNT`. Never hardcode.
 - `get_sentiment_features()` returns 7 features (fng_norm, extreme_fear, extreme_greed, news_score, news_volume_norm, coin_score, coin_magnitude)
@@ -290,6 +299,27 @@ Always apply `nan_to_num(X, nan=0.0, posinf=3.0, neginf=-3.0)` AFTER scaler tran
 - Compensatory scaling properties matching crypto market behavior
 - Original Hull/Darling-Siegert continuous diffusion replaced
 
+## Live BS/Kou Placement (2026-04-07)
+- Keep the generic Kou-style barrier probability as an ML feature, but do not rely on feature weight alone for execution decisions.
+- Compute a fresh live BS/Kou score inside `QUANTA_bot.py` after direction and dominant specialist are known, so the math uses the specialist's actual TP/SL/max-bars instead of the generic feature-275 median geometry.
+- For Nike long breakouts, route the live score through a dedicated conditional Kou kernel using pre-trigger returns plus the trigger-body jump to estimate post-jump TP-before-SL probability over the finite specialist horizon.
+- Feed live TP/SL geometry into the barrier solver in log-space, using `log1p(tp/price)` for the upside barrier and `-log(1-sl/price)` for the downside barrier.
+- Use one shared live BS/Kou context for three execution actions: veto, turbo sizing, and Kelly probability input. Avoid recomputing inconsistent barrier probabilities in separate code paths.
+- In paper trading, blend ML confidence with the live BS/Kou TP-before-SL probability before Kelly sizing, then apply the BS edge penalty relative to the specialist's zero-drift baseline.
+
+## Nike Entry Logic (2026-04-08)
+- Nike should not be treated as only a first-candle detector. Cache spike studies showed many explosive winners start with an ignition candle and become clearer on the very next confirmation candle.
+- Use a two-stage Nike trigger:
+  - relaxed setup candle to recognize ignition earlier
+  - stricter same-bar entry only for clearly extreme candles
+  - otherwise wait exactly one bar for structural confirmation
+- Confirmation bar requirements:
+  - low remains above the midpoint of the setup candle
+  - close remains above the setup close
+  - high breaks the setup high
+- Cache benchmark target for Nike pattern recognition is recall on curated spike events, not raw accuracy on all anomalies. The tuned rule reached `75%` recall on the top `80` spike events and `80%` recall on the top `50`.
+- Extend Nike's vertical barrier from `12` to `24` bars. Positive spike events peaked around `25` bars on average and `28.5` bars at the median, so the old `12`-bar window was materially too short.
+
 ## Prediction Pipeline — Sound Components
 | Component | Why Sound |
 |-----------|-----------|
@@ -317,3 +347,31 @@ Always apply `nan_to_num(X, nan=0.0, posinf=3.0, neginf=-3.0)` AFTER scaler tran
 
 ## How to Apply
 Read this file before making any changes to training logic, feature extraction, ensemble math, or threading. These are non-obvious decisions that took significant analysis to arrive at. Many have been wrong before — assume nothing is obvious.
+## Nike Benchmark Interpretation (2026-04-08)
+- Keep two benchmark lenses separate:
+  - anomaly-event recall asks whether Nike recognizes the breakout archetype
+  - realized TP/SL outcomes ask whether the trading geometry is economically viable
+- The full-cache benchmark validated the current Nike rule as a specialist, not a universal anomaly detector:
+  - all-anomaly same-or-next-bar recall = `53.05%`
+  - `run_up > 10%` same-or-next-bar recall = `72.34%`
+  - top `100` to top `1000` realized spike cohorts stayed around `72%` to `75%` recall
+- Do not loosen Nike globally just to improve all-anomaly recall. The strongest value is in high-conviction ignition/confirmation breakouts; broadening the pattern indiscriminately is likely to dilute signal quality.
+- Keep `max_bars = 24` for now because it materially improves alignment with breakout maturation time, but recognize that even `24` bars still misses many true peaks. A future runner exit or trailing structure is more defensible than extending the fixed timeout indefinitely.
+
+## Nike V2 Rollout Rule (2026-04-08)
+- Nike v2 must be judged by explicit rollout gates before live promotion:
+  - top `500` realized spike recall on `same/+1/+2` >= `75%`
+  - full-cache weighted PF > `1.150`
+  - signal count growth <= `35%`, unless PF also improves
+- If the full A/B/C rollout fails those gates, do not ship it live just because recall improved.
+- Full-cache v2 result:
+  - recall gate passed (`80.80%`)
+  - PF gate failed (`1.001`)
+  - signal growth gate passed (`+8.38%`)
+- Follow-up tuning showed:
+  - Tier `C` consistently hurts trading quality and should remain observe-only.
+  - Tier `A` is the strongest live tier.
+  - Tier `A+B` preserves strong pattern recall, but no tested exit/threshold combination cleared the PF gate.
+- Operational rule for now:
+  - Tier `A` may trade live.
+  - Tier `B` and Tier `C` should remain observe-only until a new benchmark run clears the PF gate.

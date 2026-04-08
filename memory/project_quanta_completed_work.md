@@ -301,3 +301,105 @@ Previous fix cleaned features at source but `_run_optuna_search()` subsampled da
 ## Neutral Threshold Adjustment (2026-04-03)
 - Lowered `direction_threshold` (0.12 → 0.08) and `cusum_threshold` (0.02 → 0.01) in `quanta_config.py`.
 - Reasoning: Shrinks the neutral movement zone, converting more micro-movements into valid directional signals instead of being ignored, increasing active prediction yield.
+
+## Paper Trading State Persistence Fix (2026-04-04)
+- **Error**: `Object of type ndarray is not JSON serializable` when saving `paper_trading_state.json`
+- **Root Cause**: `specialist_probs` field in positions was set to numpy array, which cannot be JSON serialized
+- **Fix**: Added numpy array → list conversion in `_save_state()` method (QUANTA_trading_core.py lines 338-343)
+- **Code**: `if 'specialist_probs' in p and isinstance(p['specialist_probs'], np.ndarray): p['specialist_probs'] = p['specialist_probs'].tolist()`
+- **Impact**: Paper trading state now saves successfully without errors, preserving positions across bot restarts
+- **Cleanup**: Deleted corrupted `paper_trading_state.json` file that had JSON parsing errors from previous failed saves
+
+## Binance fapi API Connection Issues (2026-04-04)
+- **Symptoms**: Multiple `❌ All 3 attempts failed for https://fapi.binance.com/fapi/v1/ticker/price` and WebSocket connection errors
+- **Root Cause**: Psiphon proxy (port 56356) causing intermittent connection failures to Binance futures API
+- **Affected Endpoints**: `/ticker/price`, `/openInterest`, WebSocket streams
+- **Current Mitigation**: Circuit breaker opens after 20 failures, 60s cooldown, exponential backoff retries
+- **Status**: Bot continues operating with cached data and fallback mechanisms; errors are non-critical
+- **Files**: QUANTA_network.py (NetworkHelper), quanta_exchange.py (BinanceAPIEnhanced)
+
+## Research Memory Update (2026-04-07)
+- Added `memory/kou_first_passage_conditional_note.md` documenting the finite-horizon Kou TP-before-SL probability for Nike-style post-jump entries.
+- Captures the strong-Markov conditioning result for "trigger jump already occurred" and records two production paths: one-sided Kou-Wang approximation and finite-horizon PIDE solver.
+
+## Live BS/Kou Execution Wiring (2026-04-07)
+- Added `compute_live_kou_barrier_components(...)` in `quanta_features.py` to produce a live execution score using actual TP/SL geometry, finite-horizon time decay, and optional Nike-style post-jump conditioning.
+- Added bot helpers in `QUANTA_bot.py` to pull recent live 5m log returns from the candle buffer and compute a specialist-aware BS/Kou score per symbol at execution time.
+- Replaced the old feature-275-only veto/turbo path in `QUANTA_bot.py` with the live BS/Kou context so gating now respects actual specialist TP/SL/max-bars instead of generic median barriers.
+- Stored BS/Kou execution metadata (`bs_prob`, `bs_order_prob`, `bs_time_prob`, `bs_baseline`, `bs_source`, `bs_specialist`) on each opportunity for downstream auditability.
+- Updated `QUANTA_trading_core.py` so Kelly sizing now blends ML confidence with the live BS/Kou TP-before-SL probability instead of ignoring the barrier math economically.
+- Honed the Nike path with a dedicated conditional Kou kernel: `_jit_kou_conditional_first_passage(...)` plus `_jit_nike_barrier_prob(...)` now estimate post-jump Nike probabilities from pre-trigger returns, trigger-body size, jump intensity, and a finite horizon instead of relying only on the generic live approximation.
+- Tightened execution distances to log-space in `QUANTA_bot.py` via `log1p` / `-log(1-x)` conversion before passing TP/SL geometry into the live barrier solver.
+- Verification: `python -m py_compile quanta_features.py QUANTA_bot.py QUANTA_trading_core.py` passed.
+
+## Nike Confirmation Upgrade (2026-04-08)
+- Reworked Nike from a pure single-candle detector into an ignition-plus-confirmation trigger across `quanta_numba_extractors.py`, `quanta_nike_screener.py`, and `quanta_nike_live_validator.py`.
+- New Nike logic:
+  - setup candle: `body_ratio >= 5.0`, `body_eff >= 0.4`, `vol_ratio >= 1.5`, quiet-base gate unchanged
+  - immediate same-bar entry only for extreme candles: `body_ratio >= 8.0`, `body_eff >= 0.55`, `vol_ratio >= 2.0`
+  - otherwise wait one bar and require confirmation: next bar low holds above setup midpoint, next close stays above setup close, next high breaks setup high
+- Extended `nike_max_bars` from `12` to `24` to better fit cache-derived time-to-peak behavior for explosive runners.
+- Cache benchmark on `breakout_peak_results.csv` positive spike events:
+  - top 50 events: `80.0%` same-bar-or-next-bar recall
+  - top 80 events: `75.0%` same-bar-or-next-bar recall
+  - benchmark bars-to-peak: mean `25.1–25.6`, median `28.5`
+- This benchmark measures pattern recognition recall on curated spike events, not live profit factor over the full universe.
+
+## Nike Full-Cache Benchmark (2026-04-08)
+- Added `NIKE_CACHE_PERFORMANCE_REPORT.md` with a full local-cache benchmark over `230` `5m` feather files (`19,838,110` bars).
+- Coverage summary:
+  - anomaly events: `35,634`
+  - Nike signals: `19,265`
+  - symbols with anomalies: `216`
+  - symbols with Nike signals: `215`
+- Anomaly-event recall with current Nike:
+  - all anomalies: `53.05%` same-bar-or-next-bar recall
+  - `run_up > 5%`: `68.33%`
+  - `run_up > 10%`: `72.34%`
+  - largest realized spike cohorts stayed around the target level: top `100` = `73.0%`, top `250` = `72.8%`, top `500` = `75.0%`, top `1000` = `72.6%`
+- Full-cache realized signal outcomes with `TP=2.0 ATR`, `SL=0.8 ATR`, `max_bars=24`:
+  - `TP=6030`, `SL=13111`, `TIMEOUT=124`
+  - decided accuracy = `31.50%`
+  - weighted PF = `1.150`
+  - expectancy = `+0.0816 ATR` per signal
+- Time-to-peak evidence remained consistent with the earlier positive-set study:
+  - all anomalies mean `14.76` bars, median `11`
+  - `run_up > 5%` mean `23.94`, median `26`
+  - `run_up > 10%` mean `24.50`, median `27`
+- Conclusion: current Nike is credible for strong breakout recognition and has positive expectancy, but it is not a broad anomaly detector and still needs better runner exits plus targeted fixes for large missed winners.
+
+## Nike V2 Tiered Rollout + Benchmark (2026-04-08)
+- Upgraded Nike to a tiered v2 path across `quanta_numba_extractors.py`, `quanta_nike_screener.py`, `quanta_nike_live_validator.py`, `QUANTA_bot.py`, and `QUANTA_trading_core.py`.
+- Added tier metadata end-to-end:
+  - `nike_tier`
+  - `nike_score`
+  - `nike_entry_mode`
+  - `nike_bs_floor`
+  - `nike_live_execute`
+- Added a Nike-specific paper exit profile in `QUANTA_trading_core.py`:
+  - initial stop `0.8 ATR`
+  - bank partial profits at `+2.0 ATR`
+  - trail the runner using a Nike-specific chandelier
+  - pre-bank timeout and post-bank timeout metadata persisted on the position
+- Wired the main live model path in `QUANTA_bot.py` so Nike-dominant trades pass `specialist='nike'`, the Nike exit profile, and timeout metadata into `paper.open_position(...)`.
+- Wired the dedicated Nike screener path in `QUANTA_bot.py` so signals get a live BS/Kou veto, specialist metadata, and Nike paper-exit metadata before paper execution.
+- Added runtime protection for existing paper positions by ticking them whenever their symbol appears in the live batch, rather than only when a new trade is about to open.
+- Fixed the Nike screener cooldown to use absolute bar count instead of the rolling deque index, preventing permanent cooldown after the buffer fills.
+- Produced `NIKE_V2_CACHE_PERFORMANCE_REPORT.md` from a full-cache rerun over the same `230` local `5m` files:
+  - top `500` realized spike recall on `same/+1/+2`: `80.80%`
+  - full-cache weighted PF under the v2 exit profile: `1.001`
+  - signal count delta vs baseline: `+8.38%`
+- Ran two follow-up tuning sweeps:
+  - `nike_v2_tuning_search.csv`
+  - `nike_v2_exit_search_wide.csv`
+- Tuning conclusion:
+  - Tier `C` is not fit for live trading.
+  - Tier `A` is the only tier with positive standalone PF under the tested v2 exit family.
+  - No tested `A+B` exit/threshold combination cleared both rollout gates simultaneously.
+- Conservative live rollout shipped in config:
+  - Tier `A`: live
+  - Tier `B`: observe-only
+  - Tier `C`: observe-only
+- Verification:
+  - `python -m py_compile quanta_config.py quanta_numba_extractors.py quanta_nike_screener.py quanta_nike_live_validator.py QUANTA_bot.py QUANTA_trading_core.py quanta_features.py quanta_exchange.py`
+  - runtime smoke confirmed Nike signal metadata and Nike v2 paper-position metadata persistence
