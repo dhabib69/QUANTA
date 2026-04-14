@@ -368,7 +368,9 @@ class PaperTrading:
 
     def open_position(self, symbol, entry_price, direction, confidence, atr_percent,
                       ppo_size_mult=1.0, barrier_rr=2.0, bs_edge=None, bs_prob=None,
-                      specialist=None, exit_profile=None, timeout_bars=None):
+                      specialist=None, display_agent=None, source_regime_agent=None,
+                      thor_context_active=False, baldur_top_warning=False,
+                      freya_context_valid=False, exit_profile=None, timeout_bars=None):
         """
         Open a paper position.
 
@@ -401,41 +403,76 @@ class PaperTrading:
             except Exception:
                 prob = prob_ml
 
-        # BS Edge filter (Hull Ch.26 / Darling-Siegert): penalise when live barrier math
-        # barely beats the specialist's zero-drift baseline.
-        # Threshold 0.02 (2%) — local heuristic, similar to DIRECTION_THRESHOLD=0.12.
+        # BS Edge filter (Hull Ch.26): penalise when live barrier math barely beats baseline
         if bs_edge is not None and bs_edge < 0.02:
             edge_penalty = max(0.5, min(1.0, bs_edge / 0.10))
             prob = max(0.51, prob * edge_penalty)
 
         # Kelly Criterion: f* = p - (q / b)
-        # b = barrier_rr: per-specialist TP/SL distance ratio (dynamic, replaces hardcoded 2.0)
         b = max(0.5, float(barrier_rr))
         kelly_fraction = max(0.0, prob - ((1.0 - prob) / b))
 
-        # Scale kelly to real risk: Half-Kelly in [0.3%, 2.5%] range
-        MIN_RISK = 0.003  # 0.3% minimum per trade
-        MAX_RISK = 0.025  # 2.5% maximum per trade
-        risk_percent = MIN_RISK + (MAX_RISK - MIN_RISK) * (kelly_fraction / 1.0)
-        risk_percent = max(MIN_RISK, min(MAX_RISK, risk_percent))
+        # ── COMPOUND GROWTH ENGINE — Asymmetric Target Mode (2026-04-12) ──
+        # Targets massive geometric compounding purely through equity growth.
+        # High confidence pump events (>= 85) get sized to precisely risk a safe
+        # maximum of equity (e.g. 3%) while letting the wide TP capture ~10%.
+        from quanta_config import Config as _qcfg
+        _ev = getattr(_qcfg, 'events', None)
+        _compound_mode   = str(getattr(_ev, 'compound_mode', 'asymmetric_target'))
+        _max_loss_pct    = float(getattr(_ev, 'compound_max_loss_pct', 3.0))
+        _activation_score = float(getattr(_ev, 'compound_activation_score', 85.0))
+        _score = float(confidence)
 
         stop_distance = atr_percent * 1.5
-        size_units = (self.balance * risk_percent) / max(0.001, (stop_distance / 100)) / max(1e-8, entry_price)
-        total_notional = size_units * entry_price
 
-        # ── PPO SIZE ORACLE (v11.5b) ──
-        # Apply PPO multiplier BEFORE risk manager gate.
-        # Cap: PPO can never push notional above MAX_RISK of balance.
-        ppo_size_mult = float(max(0.25, min(2.0, ppo_size_mult)))  # clamp defensively
+        if _compound_mode == "asymmetric_target" and _score >= _activation_score:
+            # 🚀 Asymmetric Pump Sizing: Size so SL costs exactly `compound_max_loss_pct`
+            target_loss_usd = self.balance * (_max_loss_pct / 100.0)
+            stop_dist_pct = max(0.0001, stop_distance / 100.0)
+            target_notional = target_loss_usd / stop_dist_pct
+
+            # Adaptive leverage based on BS confirmation
+            _bs_conf = float(bs_prob) if bs_prob is not None else 0.50
+            if _score >= 90 and _bs_conf >= 0.70:
+                _effective_leverage_cap = 10.0  # S-Tier Squeeze
+            else:
+                _effective_leverage_cap = 5.0   # A-Tier standard pump
+        else:
+            # 🛡️ Baseline Sizing: Conservative Half-Kelly in [0.3%, 2.5%] range
+            MIN_RISK = 0.003
+            MAX_RISK = 0.025
+            _base_risk = MIN_RISK + (MAX_RISK - MIN_RISK) * (kelly_fraction / 1.0)
+            _base_risk = max(MIN_RISK, min(MAX_RISK, _base_risk))
+
+            target_loss_usd = self.balance * _base_risk
+            stop_dist_pct = max(0.0001, stop_distance / 100.0)
+            target_notional = target_loss_usd / stop_dist_pct
+
+            _effective_leverage_cap = getattr(_qcfg, 'strategy', None)
+            _effective_leverage_cap = getattr(_effective_leverage_cap, 'thor_max_leverage', 5.0)
+
+        # Base notional ready
+        total_notional = target_notional
+        size_units = total_notional / max(1e-8, entry_price)
+
+        # Apply PPO oracle multiplier (fine-tuning)
+        ppo_size_mult = float(max(0.25, min(2.0, ppo_size_mult)))
         total_notional *= ppo_size_mult
         size_units     *= ppo_size_mult
-        # Hard cap: never exceed MAX_RISK% of balance regardless of PPO
-        max_notional = self.balance * MAX_RISK / max(0.001, stop_distance / 100)
-        if total_notional > max_notional:
-            total_notional = max_notional
-            size_units     = total_notional / max(1e-8, entry_price)
 
-        # ── v11.4 RISK MANAGER GATE ──
+        # Apply loss throttle from risk manager
+        _loss_throttle = getattr(self.risk_manager, 'get_size_multiplier', lambda: 1.0)()
+        if _loss_throttle < 1.0:
+            total_notional *= _loss_throttle
+            size_units     *= _loss_throttle
+
+        # Hard cap: effective leverage cap limits max notional
+        max_notional_leverage = self.balance * _effective_leverage_cap
+        if total_notional > max_notional_leverage:
+            total_notional = max_notional_leverage
+            size_units = total_notional / max(1e-8, entry_price)
+
+        # ── RISK MANAGER GATE ──
         allowed, reason = self.risk_manager.pre_trade_check(
             symbol, total_notional, direction, self.balance, self.positions
         )
@@ -446,12 +483,6 @@ class PaperTrading:
             )
             return
 
-        # Apply streak-based size reduction
-        size_mult = self.risk_manager.get_size_multiplier()
-        if size_mult < 1.0:
-            total_notional *= size_mult
-            size_units *= size_mult
-
         # Route through TWAP if large order (>$500), otherwise use market order simulation
         if total_notional >= 500:
             self.executor.execute_twap(symbol, direction, total_notional, entry_price,
@@ -459,7 +490,6 @@ class PaperTrading:
                                        confidence=confidence, atr_percent=atr_percent,
                                        specialist=specialist, exit_profile=exit_profile,
                                        timeout_bars=timeout_bars)
-            # Metadata is now handled inside _execute_market_order via executor slices
         else:
             self._execute_market_order(symbol, direction, total_notional, entry_price,
                                        confidence, atr_percent,
@@ -468,7 +498,7 @@ class PaperTrading:
 
         # Track in risk manager
         self.risk_manager.on_trade_opened(symbol, total_notional)
-        self._save_state()  # Ensure open positions are persisted immediately
+        self._save_state()
 
     def _execute_market_order(self, symbol, side, chunk_notional, step_price, confidence=0, atr_percent=0,
                               specialist=None, exit_profile=None, timeout_bars=None):
@@ -503,6 +533,13 @@ class PaperTrading:
             if atr_percent > 0: self.positions[symbol]['atr_percent'] = atr_percent
             if specialist:
                 self.positions[symbol]['specialist'] = specialist
+            if display_agent is not None:
+                self.positions[symbol]['display_agent'] = display_agent
+            if source_regime_agent is not None:
+                self.positions[symbol]['source_regime_agent'] = source_regime_agent
+            self.positions[symbol]['thor_context_active'] = bool(thor_context_active)
+            self.positions[symbol]['baldur_top_warning'] = bool(baldur_top_warning)
+            self.positions[symbol]['freya_context_valid'] = bool(freya_context_valid)
             if exit_profile:
                 self.positions[symbol]['exit_profile'] = exit_profile
             if timeout_bars is not None:
@@ -555,6 +592,11 @@ class PaperTrading:
                 'time': datetime.now(),
                 'entry_unix': time.time(),  # BS: for bars-to-hit tracking
                 'specialist': specialist_key or None,
+                'display_agent': display_agent,
+                'source_regime_agent': source_regime_agent,
+                'thor_context_active': bool(thor_context_active),
+                'baldur_top_warning': bool(baldur_top_warning),
+                'freya_context_valid': bool(freya_context_valid),
                 'exit_profile': exit_profile if isinstance(exit_profile, dict) else {},
                 'timeout_bars': timeout_bars,
                 'specialist_probs': None,   # v11.5: Set by bot for Brier tracking
@@ -570,7 +612,11 @@ class PaperTrading:
                 'max_bars_pre_bank': max_pre,
                 'max_bars_post_bank': max_post,
                 'original_size': size,  # for win/loss labeling after partial closes
+                'sl_order_id': "",      # Phase-E: exchange-side stop order ID
+                'sl_order_price': _sl,  # last price at which exchange stop was placed
             }
+            # Phase-E: place exchange-side STOP_MARKET immediately after entry
+            self._place_exchange_stop(symbol)
 
     def close_position(self, symbol, exit_price, barrier_hit='TIMEOUT', partial=False, partial_fraction=1.0):
         if symbol in self.positions:
@@ -676,6 +722,8 @@ class PaperTrading:
                 # Reduce remaining size — keep position open
                 self.positions[symbol]['size'] -= close_size
             else:
+                # Phase-E: cancel exchange-side stop before removing position
+                self._cancel_exchange_stop(symbol)
                 del self.positions[symbol]
 
             # Persist state to disk after every trade
@@ -697,6 +745,75 @@ class PaperTrading:
         if dq is None or len(dq) < 5:
             return None
         return float(sum(dq) / len(dq))
+
+    # ── Phase-E: exchange-side stop-market helpers ─────────────────────────
+    def _exch(self):
+        """Return the exchange adapter if it supports stop-market orders."""
+        try:
+            exch = self.executor.exchange
+            return exch if hasattr(exch, "place_stop_market") else None
+        except Exception:
+            return None
+
+    def _place_exchange_stop(self, symbol: str) -> None:
+        """Place an exchange-side STOP_MARKET at the position's current sl_price."""
+        exch = self._exch()
+        if exch is None:
+            return
+        pos = self.positions.get(symbol)
+        if pos is None:
+            return
+        sl_price  = float(pos.get("sl_price", 0.0))
+        size      = float(pos.get("size", 0.0))
+        direction = str(pos.get("direction", "BULLISH"))
+        if sl_price <= 0 or size <= 0:
+            return
+        # SELL stop for longs, BUY stop for shorts
+        stop_side = "SELL" if direction == "BULLISH" else "BUY"
+        try:
+            result = exch.place_stop_market(symbol, stop_side, size, sl_price, reduce_only=True)
+            self.positions[symbol]["sl_order_id"] = result.get("order_id", "")
+        except Exception as exc:
+            logging.warning(f"[stop-market] place failed for {symbol}: {exc}")
+
+    def _cancel_exchange_stop(self, symbol: str) -> None:
+        """Cancel the exchange-side stop order for a position, if any."""
+        exch = self._exch()
+        if exch is None:
+            return
+        pos = self.positions.get(symbol)
+        if pos is None:
+            return
+        order_id = str(pos.get("sl_order_id", ""))
+        if not order_id:
+            return
+        try:
+            exch.cancel_order(symbol, order_id)
+            self.positions[symbol]["sl_order_id"] = ""
+        except Exception as exc:
+            logging.warning(f"[stop-market] cancel failed for {symbol} orderId={order_id}: {exc}")
+
+    def _update_exchange_stop(self, symbol: str) -> None:
+        """Cancel old stop and place a new one at the updated sl_price (trailing)."""
+        exch = self._exch()
+        if exch is None:
+            return
+        pos = self.positions.get(symbol)
+        if pos is None:
+            return
+        old_id = str(pos.get("sl_order_id", ""))
+        # Only update if stop moved more than 0.05% to avoid thrashing
+        new_sl = float(pos.get("sl_price", 0.0))
+        last_sl = float(pos.get("sl_order_price", 0.0))
+        if last_sl > 0 and abs(new_sl - last_sl) / last_sl < 0.0005:
+            return
+        try:
+            if old_id:
+                exch.cancel_order(symbol, old_id)
+            self._place_exchange_stop(symbol)
+            self.positions[symbol]["sl_order_price"] = new_sl
+        except Exception as exc:
+            logging.warning(f"[stop-market] update failed for {symbol}: {exc}")
 
     def _is_nike_v2_position(self, pos):
         profile = pos.get('exit_profile', {})
@@ -753,6 +870,8 @@ class PaperTrading:
         trail_stop = max(pos.get('sl_price', pos['entry']), pos['entry'], new_peak - atr_move * trail_atr)
         self.positions[symbol]['nike_runner_peak'] = new_peak
         self.positions[symbol]['sl_price'] = trail_stop
+        # Phase-E: update exchange-side stop when trail moves (throttled to >0.05% change)
+        self._update_exchange_stop(symbol)
 
         if current_price <= trail_stop:
             self.close_position(symbol, current_price, barrier_hit='CHANDELIER_SL')

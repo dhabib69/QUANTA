@@ -63,6 +63,28 @@ class ExchangeAdapter(ABC):
         ...
 
     @abstractmethod
+    def place_stop_market(self, symbol: str, side: str, qty: float, stop_price: float,
+                          reduce_only: bool = True) -> dict:
+        """Place a reduce-only stop-market order."""
+        ...
+
+    @abstractmethod
+    def place_take_profit_market(self, symbol: str, side: str, qty: float, stop_price: float,
+                                 reduce_only: bool = True) -> dict:
+        """Place a reduce-only take-profit-market order."""
+        ...
+
+    @abstractmethod
+    def cancel_order(self, symbol: str, order_id: str) -> dict:
+        """Cancel an existing exchange order."""
+        ...
+
+    @abstractmethod
+    def modify_stop_order(self, symbol: str, order_id: str, new_stop_price: float) -> dict:
+        """Modify a stop order, or emulate it with cancel-replace."""
+        ...
+
+    @abstractmethod
     def get_position(self, symbol: str) -> dict:
         """Returns {'size': float, 'entry': float, 'pnl': float, 'side': str}"""
         ...
@@ -186,6 +208,30 @@ class BybitAdapter(ExchangeAdapter):
             logging.error(f"Bybit order error: {e}")
         return {"order_id": "ERROR", "status": "FAILED", "filled_price": 0}
 
+    def place_stop_market(self, symbol, side, qty, stop_price, reduce_only=True):
+        if not self._enabled:
+            return {"order_id": "DISABLED", "status": "NO_API_KEY"}
+        logging.warning("Bybit stop-market placement is not fully wired yet; using software-managed fallback")
+        return {"order_id": "NOT_IMPL", "status": "PENDING", "stop_price": float(stop_price)}
+
+    def place_take_profit_market(self, symbol, side, qty, stop_price, reduce_only=True):
+        if not self._enabled:
+            return {"order_id": "DISABLED", "status": "NO_API_KEY"}
+        logging.warning("Bybit take-profit-market placement is not fully wired yet; using software-managed fallback")
+        return {"order_id": "NOT_IMPL", "status": "PENDING", "stop_price": float(stop_price)}
+
+    def cancel_order(self, symbol, order_id):
+        if not self._enabled:
+            return {"status": "NO_API_KEY"}
+        logging.warning("Bybit cancel_order is not fully wired yet")
+        return {"status": "PENDING", "order_id": str(order_id)}
+
+    def modify_stop_order(self, symbol, order_id, new_stop_price):
+        if not self._enabled:
+            return {"status": "NO_API_KEY"}
+        logging.warning("Bybit modify_stop_order is not fully wired yet; expected behavior is cancel-replace")
+        return {"status": "PENDING", "order_id": str(order_id), "new_stop_price": float(new_stop_price)}
+
     def get_position(self, symbol):
         if not self._enabled:
             return {"size": 0, "entry": 0, "pnl": 0, "side": "NONE"}
@@ -290,6 +336,30 @@ class OKXAdapter(ExchangeAdapter):
         # Full signed OKX order placement would go here
         logging.warning("OKX order placement not fully implemented — set API keys first")
         return {"order_id": "NOT_IMPL", "status": "PENDING", "filled_price": 0}
+
+    def place_stop_market(self, symbol, side, qty, stop_price, reduce_only=True):
+        if not self._enabled:
+            return {"order_id": "DISABLED", "status": "NO_API_KEY"}
+        logging.warning("OKX stop-market placement not implemented yet; using software-managed fallback")
+        return {"order_id": "NOT_IMPL", "status": "PENDING", "stop_price": float(stop_price)}
+
+    def place_take_profit_market(self, symbol, side, qty, stop_price, reduce_only=True):
+        if not self._enabled:
+            return {"order_id": "DISABLED", "status": "NO_API_KEY"}
+        logging.warning("OKX take-profit-market placement not implemented yet; using software-managed fallback")
+        return {"order_id": "NOT_IMPL", "status": "PENDING", "stop_price": float(stop_price)}
+
+    def cancel_order(self, symbol, order_id):
+        if not self._enabled:
+            return {"status": "NO_API_KEY"}
+        logging.warning("OKX cancel_order is not implemented yet")
+        return {"status": "PENDING", "order_id": str(order_id)}
+
+    def modify_stop_order(self, symbol, order_id, new_stop_price):
+        if not self._enabled:
+            return {"status": "NO_API_KEY"}
+        logging.warning("OKX modify_stop_order is not implemented yet; expected behavior is cancel-replace")
+        return {"status": "PENDING", "order_id": str(order_id), "new_stop_price": float(new_stop_price)}
 
     def get_position(self, symbol):
         if not self._enabled:

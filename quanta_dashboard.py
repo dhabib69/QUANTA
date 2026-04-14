@@ -12,6 +12,7 @@ from pathlib import Path
 from collections import deque
 from flask import Flask, render_template, jsonify, request
 from dataclasses import asdict
+from quanta_norse_agents import display_agent_name
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'quanta-dashboard-local'
@@ -355,7 +356,8 @@ def _get_models():
         if hasattr(ml, 'specialist_models'):
             for name, spec in ml.specialist_models.items():
                 specialists.append({
-                    'name': name,
+                    'name': display_agent_name(name),
+                    'internal_name': name,
                     'weight': round(spec.get('weight', 0), 4),
                     'description': spec.get('description', ''),
                     'has_model': spec.get('model') is not None,

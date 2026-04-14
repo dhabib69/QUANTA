@@ -375,3 +375,165 @@ Read this file before making any changes to training logic, feature extraction, 
 - Operational rule for now:
   - Tier `A` may trade live.
   - Tier `B` and Tier `C` should remain observe-only until a new benchmark run clears the PF gate.
+
+## Norse Simulation Decisions (2026-04-09)
+- Thor tuning is no longer a pure "maximize final capital then tie-break by drawdown" search. `quanta_norse_year_sim.py` now uses a soft penalty objective:
+  - `score = final_capital * (1 - max(0, (max_drawdown_pct - 60) / 100) * penalty_weight)`
+  - default `penalty_weight = 1.5`
+  This preserves the user's max-profit bias but zeroes out obviously unrunnable parameter sets faster than the old lexicographic comparator.
+- Thor entry selection now has three additional hard gates before sim execution:
+  - 6-bar MAE veto via `thor_mae_veto_atr`
+  - minimum `wave_strength_score` via `thor_wave_strength_min`
+  - maximum `top_risk_score` via `thor_top_risk_max`
+  These are applied using `compute_pump_state()` on the immediate pre-entry context, not realized post-trade data.
+- Baldur is now treated as an exit overlay, not an alpha sleeve. In the year sim:
+  - independent Baldur shorts are removed from the candidate portfolio
+  - Baldur warnings above `baldur_warning_exit_score` cut the parent Thor trade at the next bar open
+- Freya is now treated as a Thor pyramid-add, not an independent scalp. In the year sim:
+  - the add is only allowed while the parent Thor trade is still open
+  - it requires Thor already to be past `thor_trail_activate_atr`
+  - it requires `wave_strength_score >= freya_pyramid_add_trigger_wave`
+  - it requires `top_risk_score < freya_pyramid_add_top_risk_max`
+  - the add notional is `freya_pyramid_add_notional_fraction` of the parent Thor notional and exits with the parent Thor trade
+- `quanta_pump_mae_stats.py` is the new Phase A calibration source. It is intended to produce:
+  - raw per-pump MAE / runup rows
+  - long-format drawdown curves
+  - bucketed aggregate MAE statistics
+  - a Thor stop decision matrix over the widened exit family
+  - a markdown report with a recommended parameter block
+- `quanta_multi_exchange.py` now exposes the stop-order API shape needed by the live retrofit:
+  - `place_stop_market()`
+  - `place_take_profit_market()`
+  - `cancel_order()`
+  - `modify_stop_order()`
+  Current Bybit / OKX behavior is explicit warning + stub return, not exchange-native stop coverage yet.
+
+## Norse MAE Optimization Decisions (2026-04-10)
+- The MAE optimization must preserve output semantics exactly. In particular, `quanta_pump_mae_stats.py` already mixes two drawdown conventions and that was kept intentionally:
+  - long-format curve rows use close-based drawdown from the running peak
+  - several pump-row MAE fields use low-based drawdown from the running peak or from entry
+  Cleaning this up would have changed the benchmark data, so the refactor keeps the old behavior.
+- `build_pump_ledger(...)` had mixed peak semantics before the refactor, and those semantics were preserved exactly:
+  - per-row `bars_since_peak`, wave-strength, and top-risk use the first occurrence of the running max high (same as `compute_pump_state(...)`)
+  - `time_to_material_drawdown_bars` uses the latest equal-high bar because the original loop reset `peak_bar` on `>=`
+  - `time_to_peak_bars` and `volume_decay_after_peak` use the earliest bar that achieved the final max runup because the original summary derived them from `max(rows, key=runup_atr)` on the forward-built ledger
+- New internal helper in `quanta_norse_agents.py`:
+  - `_pump_path_analytics(ctx, start_bar, end_bar, material_drawdown_atr)`
+  - purpose: compute the entire pump path once and feed both the MAE script and `build_pump_ledger(...)`
+  - this helper is internal only; no CLI or schema change was introduced
+- `quanta_pump_mae_stats.py` now prefers deterministic symbol-level multiprocessing, but parent reductions stay single-threaded:
+  - workers only prepare one symbol and return raw rows / curve rows / numeric decision payloads
+  - bucket aggregation, recommendation derivation, and markdown report generation remain in the parent to preserve exact ordering and byte-stable output
+- Worker output order is intentionally stabilized by preserving `_load_windowed_cache()` symbol order in the parent merge. The final CSV/report ordering guarantees remain:
+  - pump rows sorted by `entry_ts`, `symbol`
+  - curves sorted by `pump_id`, `bars_since_entry`
+  - stats sorted by existing bucket/report logic
+  - decision matrix sorted by `expectancy_atr`, `weighted_pf`, `sum_realized_atr`
+- `ProcessPoolExecutor` is the primary runtime path, but `quanta_pump_mae_stats.py` now falls back to deterministic single-process execution when worker creation fails with `OSError` or `PermissionError`. This fallback exists specifically because the Codex sandbox blocks Windows multiprocessing pipe creation, not because the parallel design was dropped.
+- Verification standard for this refactor:
+  - exact equality against the pre-refactor MAE logic on a fixed 30-day subset
+  - byte-stable reruns on the same subset
+  - explicit ledger-row + ledger-summary equality for `build_pump_ledger(...)`
+  - hotspot benchmark focused on the analytics path, not just end-to-end wall time, because sandboxed process creation makes full parallel runtime measurement unreliable here
+
+## Norse Turbo Strict-Path Decisions (2026-04-11)
+- Stage-0 cache validity is now fail-closed by default:
+  - valid run requires `_manifest.json` present with `complete=true`
+  - manifest counts must match the current 365-day universe
+  - every symbol pair must pass loader validation against the current `max_open_time_ms`
+- `quanta_norse_year_sim.py` should not silently mix cache hits with uncached fallback on the canonical path.
+  - default behavior: validated cache only, zero misses allowed
+  - emergency-only escape hatches:
+    - `QUANTA_NORSE_ALLOW_CACHE_MISS_FALLBACK=1`
+    - `QUANTA_NORSE_ALLOW_LEGACY_FALLBACK=1`
+- Cache-loaded `PreparedSymbol` objects already contain a full dense `SparseFeatureContext`.
+  - `_ensure_feature_positions(...)` must no-op for that path when `replay_engine is None` and `len(feature_ctx.times) == len(df)`
+  - otherwise the code falls back into offline feature extraction and can trip unrelated replay-engine assumptions
+- The Turbo cache evaluator must optimize on the same Thor score used by the full sim.
+  - raw `nike_score` from the detector is not the execution gate
+  - canonical gating score is `score_thor_signal(sig, ctx)`
+  - MAE rows now carry that as `thor_feature_score`
+  - `CachedTrialEvaluator` should use `thor_feature_score`, not `nike_score`
+- Current measured Norse Turbo outcome after score-contract alignment:
+  - final capital `$10,745.57`
+  - growth `+7.46%`
+  - max drawdown `15.93%`
+  - `51` executed Thor trades
+  - Freya and Baldur contributed zero trades on this pass
+  - cache-vs-sim divergence improved materially after the score fix but still remained non-trivial on drawdown (`13.8 pp`)
+- `run_year_simulation()` must preserve the tuner metadata returned by `_tune_params(...)`.
+  - the final detailed evaluation should only run when pump/trade outputs are missing
+  - otherwise the returned Turbo metadata (`wf_fold_metrics`, sensitivity, Optuna study, learned filter, cache reconciliation) is lost from the final report
+
+## Thor Exit Capture Decisions (2026-04-12)
+- Thor profit capture is currently more constrained by exit shape than by raw breakout recognition. The next iteration should improve the shared exit kernel before changing entry logic or objectives.
+- `thor_max_bars_post_bank` should mean post-bank age, not total age since entry.
+  - enforcing it from entry suppresses runner capture when bank is reached late
+  - the shared Thor sim kernels should track `bank_bar` explicitly and enforce the timeout from there
+- The Thor exit kernel should use live path state, not only fixed ATR distances, after the bank hit.
+  - strong continuation states should tolerate more giveback and trail later / wider
+  - weakening states should tighten faster based on wave decay, top-risk rise, flow exhaustion, weak close position, upper wicks, and stale bars-since-peak
+- The adaptive path should stay inside the shared Numba kernel used by both:
+  - `simulate_thor_exit_stop_market(...)`
+  - `_sweep_thor_exits_njit(...)`
+  This keeps the MAE row generation path and the live year-sim exit path aligned.
+- A controlled below-entry runner stop after bank is acceptable when the partial bank already funds the residual risk.
+  - the correct limit is bounded by the realized bank cushion on the remaining position, not by a hard “runner must never dip below entry” rule
+  - this is intended to reduce premature shakeouts on real breakouts, not to widen pre-bank loss risk
+- Stage-2 exit tuning should not depend on a single round-1 winner.
+  - keep the top few round-1 seeds
+  - then sweep trail/time-cap params across those seeds
+  - when objective scores are similar, prefer higher median fold growth / expectancy
+- This step intentionally avoided a new MAE rebuild or year sim run.
+  - compile/import verification was sufficient to validate the code edits
+  - the user still needs to rerun the MAE builder and the year sim locally to measure whether the new exit family actually improves realized growth
+
+## Thor Tuning Breakdown Observed In Full Rerun (2026-04-12)
+- The latest full-year rerun proves the current Turbo objective is no longer a reliable benchmark for this strategy shape.
+  - best Optuna score stayed around `-99.9`
+  - stage-2 exit fine-tune scores stayed effectively flat across the whole widened search
+  - final full sim still produced `+71.72%` growth with `54.21%` max drawdown and `42` trades
+- Root cause is structural:
+  - `MIN_TRADES_PER_FOLD = 20` in `norse_tuner/objective.py`
+  - current Thor trade frequency is only `42` trades over the whole year
+  - with `5` walk-forward folds, most or all folds necessarily fail the minimum-trades gate
+  - this collapses the objective surface so Optuna and exit fine-tune cannot meaningfully rank candidates
+- The full sim result is still real as a point backtest, but it should not be interpreted as a properly tuned optimum.
+  - the candidate was selected on a nearly flat / degenerate tuning surface
+  - treat this run as evidence that the new exits can raise gross returns, not that the tuner is now trustworthy
+- The cache approximation is currently too weak for drawdown-sensitive tuning under the new exit family.
+  - observed cache-vs-sim divergence reached `8.6%` capital and `47.2 pp` drawdown
+  - likely driver: longer runner holds increase overlap / path / capital-allocation effects that the cached evaluator does not approximate well enough
+- Next priority should be tuner repair, not more parameter-search runs on the current benchmark.
+
+## Turbo Repair Decisions After The 71.72% / 54.21% Run (2026-04-12)
+- The hard minimum-trades fold gate was the primary reason the Optuna surface collapsed.
+  - a low-frequency Thor strategy should not be treated as invalid solely because a fold has fewer than `20` trades
+  - replacement policy: use confidence-weighted fold scoring instead of binary rejection
+  - zero-trade folds remain hard failures; low-trade profitable folds are discounted rather than erased
+- Candidate selection should not trust one cache-selected winner.
+  - keep several distinct bootstrap-passed stage-1 candidates
+  - fine-tune exits for each candidate
+  - rerank the top candidate set using real full-sim outputs
+- The final full-sim candidate score should be stricter on drawdown than the old legacy helper.
+  - drawdown around `50%+` should be actively disfavored during final selection
+  - selection now uses a drawdown-aware full-sim rerank key instead of a pure cached winner handoff
+- Cache-vs-sim reconciliation should include the tuned exit params whenever possible.
+  - `CachedTrialEvaluator.evaluate_full(...)` only knows the cacheable stage-1 params
+  - stage-2 diagnostics should therefore use a fast replay estimate that includes the exit params, not the stage-1 evaluator alone
+- Persisted Optuna studies from the pre-repair objective should be discarded.
+  - changed low-trade scoring means old trials are no longer on the same objective surface
+
+## Norse Full-Sim Progress Logging (2026-04-12)
+- User-facing runtime visibility matters for long Norse runs; stage-only prints were not enough.
+- Detailed trade-style prints are now emitted only on the real full-sim path, not the fast cache evaluator path.
+- Logging lives in `_evaluate_params(...)` and is wired from `norse_tuner/pipeline.py` with `sim_logger=_log` and `detailed_progress=True`.
+- Output is intentionally compact: per-symbol summary plus a few sample Thor/Freya trade lines, with periodic aggregate checkpoints for quiet symbols.
+
+## Norse Run Artifact Strategy + Diagnostics (2026-04-12)
+- Research outputs should be append-only across runs, not overwritten in place.
+- `quanta_norse_year_sim.py` now creates a UTC-timestamped run folder under `norse_runs/` and writes all artifacts there.
+- Post-run diagnostics are generated from `trade_df` joined with `pump_summary_df` on `pump_id`/`symbol`.
+- Loss rows get a heuristic `what_went_wrong`; big-win rows get a heuristic `what_went_right`.
+- Big wins are currently defined as positive-net-PnL trades at or above the 80th percentile of positive trade `net_pnl`.
+- Feature comparison output focuses on medians/means for numeric trade + pump-path fields between losses and big wins.

@@ -412,7 +412,7 @@ class NikeScreener:
             target=self._run_loop, name="NikeScreener", daemon=True
         )
         self._thread.start()
-        logging.info(f"NikeScreener started — watching {len(self.symbols)} symbols on 5m")
+        logging.info(f"ThorScreener started — watching {len(self.symbols)} symbols on 5m")
 
     def stop(self) -> None:
         self._stop.set()
@@ -442,7 +442,7 @@ class NikeScreener:
             for i in range(0, len(streams_all), MAX_STREAMS)
         ]
         logging.info(
-            f"NikeScreener: {len(self.symbols)} symbols → "
+            f"ThorScreener: {len(self.symbols)} symbols → "
             f"{len(chunks)} WS connections"
         )
         tasks = [
@@ -462,7 +462,7 @@ class NikeScreener:
                 await self._connect(url, conn_id)
             except Exception as exc:
                 if not self._stop.is_set():
-                    logging.debug(f"NikeScreener conn-{conn_id}: {exc} — reconnecting in {RECONNECT_DELAY}s")
+                    logging.debug(f"ThorScreener conn-{conn_id}: {exc} — reconnecting in {RECONNECT_DELAY}s")
                     await asyncio.sleep(RECONNECT_DELAY)
 
     async def _connect(self, url: str, conn_id: int) -> None:
@@ -571,10 +571,10 @@ class NikeScreener:
                 try:
                     self.on_signal(sig)
                 except Exception as e:
-                    logging.debug(f"NikeScreener on_signal callback error: {e}")
+                    logging.debug(f"ThorScreener on_signal callback error: {e}")
 
             logging.info(
-                f"NIKE  {symbol:<18}  "
+                f"THOR  {symbol:<18}  "
                 f"tier={sig.tier}  "
                 f"body={sig.body_pct:+.2f}%  "
                 f"ratio={sig.body_ratio:.1f}x  "
@@ -586,4 +586,4 @@ class NikeScreener:
             )
 
         except Exception as e:
-            logging.debug(f"NikeScreener _handle error: {e}")
+            logging.debug(f"ThorScreener _handle error: {e}")

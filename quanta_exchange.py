@@ -1643,6 +1643,65 @@ class BinanceAPIEnhanced(BaseAPI):
         
         return successful > 0
 
+    # ── Phase-E: exchange-side stop-market orders ──────────────────────────
+    def _signed_request(self, method: str, path: str, params: dict) -> dict:
+        """Sign and send a Binance Futures private REST request."""
+        import hashlib, hmac, urllib.parse, requests as _req, time as _time
+        api_key    = getattr(self.cfg, "api_key",    "") or ""
+        api_secret = getattr(self.cfg, "api_secret", "") or ""
+        if not api_key or not api_secret:
+            return {"error": "no_credentials"}
+        params["timestamp"] = int(_time.time() * 1000)
+        query = urllib.parse.urlencode(params)
+        sig   = hmac.new(api_secret.encode(), query.encode(), hashlib.sha256).hexdigest()
+        url   = f"{self.base_url}/{path}?{query}&signature={sig}"
+        headers = {"X-MBX-APIKEY": api_key}
+        try:
+            if method == "POST":
+                r = _req.post(url, headers=headers, timeout=5)
+            elif method == "DELETE":
+                r = _req.delete(url, headers=headers, timeout=5)
+            else:
+                r = _req.get(url, headers=headers, timeout=5)
+            return r.json()
+        except Exception as exc:
+            logging.warning(f"[stop-market] {method} {path} failed: {exc}")
+            return {"error": str(exc)}
+
+    def place_stop_market(self, symbol: str, side: str, qty: float,
+                          stop_price: float, reduce_only: bool = True) -> dict:
+        """Place a STOP_MARKET order on Binance Futures."""
+        params = {
+            "symbol":        symbol,
+            "side":          side,          # "SELL" for long, "BUY" for short
+            "type":          "STOP_MARKET",
+            "stopPrice":     f"{stop_price:.8f}",
+            "quantity":      f"{qty:.8f}",
+            "reduceOnly":    "true" if reduce_only else "false",
+            "timeInForce":   "GTE_GTC",
+        }
+        result = self._signed_request("POST", "order", params)
+        order_id = str(result.get("orderId", "")) if isinstance(result, dict) else ""
+        logging.info(f"[stop-market] placed {symbol} stop@{stop_price:.6f}  orderId={order_id}")
+        return {"order_id": order_id, "raw": result}
+
+    def cancel_order(self, symbol: str, order_id: str) -> dict:
+        """Cancel an open order on Binance Futures."""
+        if not order_id:
+            return {"error": "no_order_id"}
+        params = {"symbol": symbol, "orderId": order_id}
+        result = self._signed_request("DELETE", "order", params)
+        logging.info(f"[stop-market] cancelled {symbol} orderId={order_id}")
+        return result
+
+    def modify_stop_order(self, symbol: str, order_id: str, new_stop_price: float) -> dict:
+        """Cancel-and-replace stop order (Binance Futures doesn't support in-place modification)."""
+        # Note: qty will be re-placed by the caller
+        if order_id:
+            self.cancel_order(symbol, order_id)
+        return {"status": "cancelled_for_replace"}
+
+
 class SmartExecutor:
     """C3. VWAP/TWAP Smart Execution Engine
     Splits large orders to minimize slippage on illiquid pairs.

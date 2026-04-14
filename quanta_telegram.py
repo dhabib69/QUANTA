@@ -36,6 +36,12 @@ class TelegramBot:
         self._triple_save = None
 
     def send(self, text):
+        if not self.telegram_token:
+            logging.warning("Telegram send skipped: TELEGRAM_TOKEN is not set")
+            return
+        if not getattr(self.cfg, 'chat_id', None):
+            logging.warning("Telegram send skipped: TELEGRAM_CHAT_ID is not set")
+            return
         try:
             response = NetworkHelper.post(
                 f"{self.telegram_api}/sendMessage",
@@ -43,7 +49,14 @@ class TelegramBot:
                 timeout=5
             )
             if not response:
-                logging.error("Failed to send Telegram message")
+                logging.error("Telegram send failed: no response after retries (check token/network)")
+            else:
+                try:
+                    body = response.json()
+                    if not body.get('ok'):
+                        logging.error(f"Telegram API error {body.get('error_code')}: {body.get('description')}")
+                except Exception:
+                    pass
         except Exception as e:
             logging.error(f"Telegram send error: {e}")
 

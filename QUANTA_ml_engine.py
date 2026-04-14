@@ -712,7 +712,7 @@ class DeepMLEngine:
                 'calibrator': None,
                 'generation': 0,
                 'weight': 1.0 / 7,
-                'description': 'Nike (Impulse Rider) — Goddess of victory; single-candle explosive moves, predicts continuation vs death',
+                'description': 'Thor (Impulse Rider) — Norse breakout specialist; single-candle explosive moves, predicts continuation vs death',
                 'coin_filter': 'nike',
                 'performance': [],
                 'hyperparams': {
@@ -5583,3 +5583,135 @@ class DeepMLEngine:
     # NOTE: recompute_model_weights was removed in v7.0 — it referenced
     # self.model_weights which was never initialised, causing AttributeError.
     # Specialist ensemble weights are now managed via specialist_models dict.
+
+
+class _OfflineReplaySentiment:
+    """Neutral sentiment provider for offline feature replay."""
+
+    @staticmethod
+    def get_sentiment_features(symbol=None):
+        return [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+
+class _OfflineReplayOnchain:
+    """Neutral on-chain provider for offline feature replay."""
+
+    @staticmethod
+    def get_onchain_features(symbol=None):
+        return [0.0, 0.0, 0.5]
+
+
+def build_offline_feature_replay_engine(cfg=None):
+    """
+    Create a lightweight DeepMLEngine shell for offline feature replay.
+
+    This avoids the full constructor cost (registry, TFT, live services) while
+    reusing the authoritative feature extraction methods.
+    """
+    engine = DeepMLEngine.__new__(DeepMLEngine)
+    cfg_obj = cfg or Config
+    if not hasattr(cfg_obj, "BASE_FEATURE_COUNT"):
+        cfg_obj.BASE_FEATURE_COUNT = int(getattr(cfg_obj.model, "base_feature_count", 278))
+    if not hasattr(cfg_obj, "timeframes"):
+        cfg_obj.timeframes = ['5m', '15m', '1h', '4h', '6h', '12h', '1d']
+    if not hasattr(cfg_obj, "tf_weights"):
+        cfg_obj.tf_weights = {
+            '5m': 0.08, '15m': 0.10, '1h': 0.18, '4h': 0.22,
+            '6h': 0.14, '12h': 0.12, '1d': 0.16,
+        }
+    if not hasattr(cfg_obj, "historical_days"):
+        cfg_obj.historical_days = int(getattr(cfg_obj.market, "historical_days", 180))
+
+    engine.cfg = cfg_obj
+    engine.bnc = None
+    engine.mtf = None
+    engine.candle_store = None
+    engine.sentiment = _OfflineReplaySentiment()
+    engine.onchain = _OfflineReplayOnchain()
+    engine.rt_cache = {}
+    engine._hist_futures_cache = {}
+    engine._ob_depth_history = defaultdict(lambda: deque(maxlen=10))
+    engine._bs_avg_bars_to_hit = {}
+    engine.hmm_models = {}
+    engine.hmm_last_fit = {}
+    return engine
+
+
+def _cache_df_to_klines_np(df):
+    """Convert cached feather OHLCV into Binance-like numpy klines for replay."""
+    if df is None or len(df) == 0:
+        return np.empty((0, 12), dtype=np.float64)
+
+    n = len(df)
+    out = np.zeros((n, 12), dtype=np.float64)
+    out[:, 0] = df["open_time"].to_numpy(dtype=np.float64)
+    out[:, 1] = df["open"].to_numpy(dtype=np.float64)
+    out[:, 2] = df["high"].to_numpy(dtype=np.float64)
+    out[:, 3] = df["low"].to_numpy(dtype=np.float64)
+    out[:, 4] = df["close"].to_numpy(dtype=np.float64)
+    out[:, 5] = df["volume"].to_numpy(dtype=np.float64)
+    out[:, 6] = out[:, 0] + (5 * 60 * 1000)
+    if "qv" in df.columns:
+        out[:, 7] = df["qv"].to_numpy(dtype=np.float64)
+    else:
+        out[:, 7] = out[:, 4] * out[:, 5]
+    if "trades" in df.columns:
+        out[:, 8] = df["trades"].to_numpy(dtype=np.float64)
+    if "tbv" in df.columns:
+        out[:, 9] = df["tbv"].to_numpy(dtype=np.float64)
+    elif "taker_buy" in df.columns:
+        out[:, 9] = df["taker_buy"].to_numpy(dtype=np.float64)
+    else:
+        out[:, 9] = 0.5 * out[:, 5]
+    out[:, 10] = out[:, 4] * out[:, 9]
+    return out
+
+
+def precompute_offline_feature_bundle(df, engine=None):
+    replay_engine = engine or build_offline_feature_replay_engine()
+    klines_np = _cache_df_to_klines_np(df)
+    precomputed = replay_engine._precompute_coin_indicators(klines_np) if len(klines_np) else {}
+    return {
+        "engine": replay_engine,
+        "precomputed": precomputed,
+        "klines_np": klines_np,
+    }
+
+
+def extract_offline_features_for_positions(df, symbol, positions, engine=None, precomputed=None, klines_np=None):
+    """
+    Reuse QUANTA's authoritative feature extractor for selected cached positions.
+
+    Returns:
+        {
+            "engine": replay_engine,
+            "precomputed": indicator_cache,
+            "klines_np": raw numpy klines,
+            "features_by_pos": {bar_index: np.ndarray[BASE_FEATURE_COUNT]},
+        }
+    """
+    replay_engine = engine or build_offline_feature_replay_engine()
+    klines_np = klines_np if klines_np is not None else _cache_df_to_klines_np(df)
+    if len(klines_np) == 0:
+        return {
+            "engine": replay_engine,
+            "precomputed": {},
+            "klines_np": klines_np,
+            "features_by_pos": {},
+        }
+
+    precomputed = precomputed if precomputed is not None else replay_engine._precompute_coin_indicators(klines_np)
+    wanted = sorted({int(p) for p in positions if 50 <= int(p) < len(klines_np)})
+    features_by_pos = {}
+    for pos in wanted:
+        feat = replay_engine._fast_extract_at_position(precomputed, pos, klines_np, symbol=symbol)
+        if feat is None:
+            continue
+        features_by_pos[pos] = np.asarray(feat, dtype=np.float64)
+
+    return {
+        "engine": replay_engine,
+        "precomputed": precomputed,
+        "klines_np": klines_np,
+        "features_by_pos": features_by_pos,
+    }

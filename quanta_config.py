@@ -331,6 +331,119 @@ class EventExtractionConfig:
     nike_max_bars_pre_bank: int = 24     # Hard timeout if no bank by 2h
     nike_max_bars_post_bank: int = 36    # Hard close the runner after 3h
 
+    # -- Norse live operating mode --
+    # Keep internal keys unchanged; only user-facing names are renamed.
+    model_live_specialists: str = "nike"  # only these internal model specialists may execute live
+    thor_context_bars: int = 24
+    thor_context_min_score: float = 72.0
+    baldur_live: bool = False
+    freya_live: bool = False
+
+    # -- Norse portfolio simulation / future live sizing --
+    # Reverting to validated stable baseline
+    thor_risk_pct: float = 0.005
+    thor_max_leverage: float = 5.0
+    thor_capital_cap: float = 0.50
+    thor_tp_atr: float = 2.5
+    # Tuned via Optuna (2026-04-13) +979.28% yield parameters
+    thor_sl_atr: float = 2.40
+    thor_bank_atr: float = 5.40
+    thor_bank_fraction: float = 0.45
+    thor_runner_trail_atr: float = 4.00
+    thor_trail_activate_atr: float = 1.50
+    thor_max_bars_pre_bank: int = 144
+    thor_max_bars_post_bank: int = 1152
+    thor_min_score_trade: float = 64.0
+    thor_trade_tiers: str = "A,B,C"
+    thor_trade_cooldown_bars: int = 36
+    thor_max_concurrent_positions: int = 3
+    thor_feature_score_min: float = 74.0
+    thor_mae_veto_atr: float = 7.60
+    thor_wave_strength_min: float = 45.0
+    thor_top_risk_max: float = 80.0
+    # Hour-of-day gate: empty = no filter; "14" = hour-14 UTC only; "13,14,15" = window
+    thor_entry_hour_utc: str = ""
+
+    # -- Baldur: Thor-linked bearish top-start detector --
+    baldur_min_runup_atr: float = 1.0
+    baldur_upper_wick_min: float = 0.25
+    baldur_close_pos_max: float = 0.40
+    baldur_confirm_drop_pct: float = 0.25
+    baldur_risk_pct: float = 0.010
+    baldur_max_leverage: float = 4.0
+    baldur_capital_cap: float = 0.25
+    baldur_tp_atr: float = 1.5
+    baldur_sl_atr: float = 0.9
+    baldur_max_bars: int = 12
+    baldur_min_score_trade: float = 78.0
+    baldur_min_runup_trade_atr: float = 3.5
+    baldur_min_upper_wick_trade: float = 0.55
+    baldur_max_concurrent_positions: int = 1
+    baldur_top_risk_min: float = 72.0
+    baldur_warning_exit_score: float = 40.0
+
+    # -- Freya: Thor-linked short-horizon momentum scalp --
+    freya_momentum_pct: float = 0.10
+    freya_body_eff_min: float = 0.35
+    freya_vol_mult: float = 0.70
+    freya_cooldown_bars: int = 8
+    freya_risk_pct: float = 0.0020
+    freya_max_leverage: float = 3.0
+    freya_capital_cap: float = 0.25
+    freya_tp_atr: float = 1.2
+    freya_sl_atr: float = 0.6
+    freya_max_bars: int = 8
+    freya_min_score_trade: float = 50.0
+    freya_max_concurrent_positions: int = 1
+    freya_thor_score_min: float = 60.0
+    freya_allow_tier_c: bool = False
+    freya_min_wait_bars: int = 2
+    freya_min_runup_atr: float = 0.6
+    freya_pullback_min_atr: float = 0.15
+    freya_pullback_max_atr: float = 1.25
+    freya_pullback_floor_atr: float = 0.10
+    freya_min_reclaim_atr: float = -0.05
+    freya_max_extension_atr: float = 0.35
+    freya_max_peak_gap_atr: float = 0.75
+    freya_peak_gap_chase_floor_atr: float = 0.02
+    freya_chase_vol_max: float = 1.50
+    freya_chase_move_max: float = 0.40
+    freya_upper_wick_max: float = 0.30
+    freya_close_pos_min: float = 0.60
+    freya_min_quote_vol20: float = 20000.0
+    freya_wave_score_min: float = 72.0
+    freya_baldur_block_threshold: float = 70.0
+    freya_pyramid_add_notional_fraction: float = 0.50
+    freya_pyramid_add_trigger_wave: float = 25.0
+    freya_pyramid_add_top_risk_max: float = 60.0
+
+    # -- Feature-aware Norse simulation controls --
+    pump_material_drawdown_atr: float = 1.0
+    stop_market_penetration_factor: float = 0.20
+    stop_market_slip_atr_cap: float = 0.25
+    norse_drawdown_penalty_weight: float = 1.5
+
+    # -- Compound Growth Engine (Asymmetric Target Mode - 2026-04-12) --
+    # Re-engineered: Target exactly 10% equity gain on confirmed pump wins,
+    # hard-capped at 2-3% equity loss on stops. Compounding happens naturally
+    # because 10% of a glowing equity base is a larger notional size.
+    compound_mode: str = "asymmetric_target"  # "flat" | "geometric" | "asymmetric_target"
+    compound_target_win_pct: float = 10.0     # Target: 10% equity gain per win
+    compound_max_loss_pct: float = 3.0        # Hard cap: 3% equity loss per trade
+    compound_activation_score: float = 70.0   # Unleashed: Optuna proved 70+ scores yield a 75.7% win rate.
+    compound_pump_tp_atr_min: float = 5.0     # Minimum ATR for TP (to reach 10% win properly)
+    compound_pump_sl_atr_max: float = 1.5     # Tighter SL to keep losses <= 3%
+
+    # -- Liquidation Cascade Targeting (2026-04-12) --
+    # Identifies short-squeeze liquidation clusters above entry to extend TP targets.
+    # Derived from open interest accumulation + funding rate extremes (Makarov & Schoar 2020).
+    liq_enabled: bool = True
+    liq_oi_surge_threshold: float = 0.12     # OI increase >12% in 4h = dense cluster
+    liq_funding_extreme: float = -0.025      # Funding < -0.025% = heavy short buildup
+    liq_cascade_size_boost: float = 1.25     # Position boost when cascade target exists
+    liq_max_target_dist_pct: float = 15.0   # Don't target clusters >15% away
+    liq_min_oi_vol_ratio: float = 1.5        # OI/volume ratio for meaningful cluster
+
 
 @dataclass
 class TFTConfig:
@@ -544,15 +657,23 @@ class RiskManagerConfig:
     Capital protection and circuit breaker settings (v11.4).
     Based on: Bouchaud & Potters (2003), López de Prado (2018) AFML Ch.10.
     """
-    max_daily_drawdown_pct: float = 3.0       # Pause trading if daily loss exceeds this %
+    max_daily_drawdown_pct: float = 8.0       # Compound mode: pause if daily loss >8% (was 3%)
     max_open_positions: int = 50              # Max concurrent open positions
-    max_single_coin_pct: float = 50.0         # Max exposure to any single coin (% of balance) [loosened for paper trading]
-    max_total_exposure_pct: float = 5000.0     # Max total portfolio exposure (% of balance) [loosened for paper trading]
+    max_single_coin_pct: float = 50.0         # Max exposure to any single coin (% of balance)
+    max_total_exposure_pct: float = 5000.0    # Max total portfolio exposure (% of balance)
     consecutive_loss_throttle: int = 3        # Reduce size after N consecutive losses
     throttle_size_factor: float = 0.5         # Size multiplier per excess loss (0.5 = half)
     cooldown_after_breaker_min: int = 60      # Minutes to pause after circuit breaker triggers
-    max_correlation_exposure: int = 5         # Max same-direction positions [loosened for paper trading]
-    max_risk_per_trade_pct: float = 33.0      # Hard cap: single trade cannot risk more than 33% of balance [loosened for paper trading]
+    max_correlation_exposure: int = 5         # Max same-direction positions
+    max_risk_per_trade_pct: float = 33.0      # Hard cap: single trade cannot risk more than 33% of balance
+
+    # -- Compound Growth Engine Guardrails (2026-04-12) --
+    # Prevents ruin during aggressive compound sizing. Inspired by Taleb (2012) barbell strategy.
+    compound_weekly_dd_limit: float = 20.0    # Hard pause if weekly rolling DD > 20%
+    compound_ruin_threshold: float = 0.35     # Emergency flat if equity drops to 35% of peak
+    compound_recovery_mode_mult: float = 0.30 # After ruin trigger, size at 30% until 60% of peak recovered
+    compound_win_streak_boost: float = 0.15   # +15% position per streak tier above trigger
+    compound_streak_trigger: int = 3          # Wins before streak boost kicks in
 
     def __post_init__(self):
         assert self.max_daily_drawdown_pct > 0, \

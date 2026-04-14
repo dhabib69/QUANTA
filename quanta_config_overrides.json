@@ -3,5 +3,15 @@
         "ai_api_key": "aa4d3fb2ad2f4e6eb6a3f5cf0c2a2743.xrJ6DdlvZRbFeOO3",
         "ai_base_url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
         "ai_model_name": "glm-5-turbo"
+    },
+    "events": {
+        "thor_min_score_trade": 68.0,
+        "thor_trade_tiers": "A,B",
+        "thor_trail_activate_atr": 1.00,
+        "thor_runner_trail_atr": 6.00,
+        "thor_mae_veto_atr": 8.00,
+        "thor_wave_strength_min": 40.0,
+        "thor_top_risk_max": 70.0,
+        "baldur_warning_exit_score": 65.0
     }
 }

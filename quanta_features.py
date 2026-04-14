@@ -768,6 +768,100 @@ def _jit_bs_implied_vol_ratio(avg_bars_to_hit, barrier_dist, sigma_realized, dt=
     return max(0.1, min(10.0, ratio))
 
 
+@njit(cache=True)
+def _jit_kou_conditional_first_passage(log_returns, tp_dist, sl_dist, max_bars):
+    """
+    Fast Nike-oriented conditional post-jump approximation.
+
+    Assumes the trigger jump already happened and the process starts close to the
+    upper barrier, so we bias toward the one-sided remaining upside distance while
+    preserving a finite-horizon penalty through the time-decay term outside.
+    """
+    if len(log_returns) < 5:
+        return 0.5
+    base_prob = _jit_kou_barrier_prob(log_returns, tp_dist, sl_dist)
+    proximity_boost = sl_dist / max(tp_dist + sl_dist, 1e-12)
+    horizon_penalty = 1.0 - np.exp(-max(1.0, float(max_bars)) / 24.0)
+    p = 0.55 * base_prob + 0.45 * proximity_boost
+    p *= horizon_penalty
+    return max(0.0, min(1.0, p))
+
+
+def compute_live_kou_barrier_components(
+    log_returns,
+    tp_dist,
+    sl_dist,
+    max_bars,
+    direction="BULLISH",
+    conditional_jump=False,
+    specialist=None,
+):
+    """
+    Live barrier probability helper used by QUANTA_bot execution.
+
+    Returns a compact context with:
+    - prob: finite-horizon TP-before-SL probability
+    - order_prob: same live probability for order sizing
+    - time_prob: horizon-only crossing proxy
+    - sigma_eff: realized sigma from recent log returns
+    - tp_dist_live / sl_dist_live / bars_live
+    - conditional_jump / source / baseline / specialist
+    """
+    try:
+        arr = np.asarray(log_returns, dtype=np.float64)
+    except Exception:
+        arr = np.zeros(0, dtype=np.float64)
+
+    tp_dist = float(max(tp_dist, 1e-8))
+    sl_dist = float(max(sl_dist, 1e-8))
+    bars_live = int(max(1, max_bars))
+    baseline = float(sl_dist / max(tp_dist + sl_dist, 1e-12))
+
+    if arr.size < 5:
+        return {
+            "prob": baseline,
+            "order_prob": baseline,
+            "time_prob": 0.0,
+            "sigma_eff": 0.0,
+            "tp_dist_live": tp_dist,
+            "sl_dist_live": sl_dist,
+            "bars_live": bars_live,
+            "conditional_jump": bool(conditional_jump),
+            "source": "live_fallback",
+            "baseline": baseline,
+            "specialist": specialist,
+        }
+
+    sigma_eff = float(np.std(arr))
+    time_prob = float(_jit_bs_time_decay(sigma_eff, tp_dist, bars_live))
+
+    if conditional_jump:
+        base_prob = float(_jit_kou_conditional_first_passage(arr, tp_dist, sl_dist, bars_live))
+        source = "live_nike_conditional"
+    else:
+        base_prob = float(_jit_kou_barrier_prob(arr, tp_dist, sl_dist))
+        source = "live_kou"
+
+    prob = float(max(0.0, min(1.0, 0.7 * base_prob + 0.3 * time_prob)))
+
+    if str(direction).upper() == "BEARISH":
+        prob = 1.0 - prob
+
+    return {
+        "prob": float(max(0.0, min(1.0, prob))),
+        "order_prob": float(max(0.0, min(1.0, prob))),
+        "time_prob": float(max(0.0, min(1.0, time_prob))),
+        "sigma_eff": sigma_eff,
+        "tp_dist_live": tp_dist,
+        "sl_dist_live": sl_dist,
+        "bars_live": bars_live,
+        "conditional_jump": bool(conditional_jump),
+        "source": source,
+        "baseline": baseline,
+        "specialist": specialist,
+    }
+
+
 # =================== INDICATORS (OPTIMIZED WITH CACHE) ===================
 class Indicators:
     """

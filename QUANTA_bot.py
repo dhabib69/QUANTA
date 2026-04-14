@@ -168,6 +168,7 @@ except Exception as e:
 # Import central constants
 from QUANTA_trading_core import *
 from QUANTA_selector import QuantaSelector
+from quanta_norse_agents import display_agent_name, parse_live_model_specialists
 
 # ── WebSocket feed (replaces REST polling producers) ──────────
 try:
@@ -186,7 +187,7 @@ try:
     NIKE_SCREENER_AVAILABLE = True
 except ImportError as e:
     NIKE_SCREENER_AVAILABLE = False
-    print(f"⚠️  NikeScreener not found ({e})")
+    print(f"⚠️  Thor screener not found ({e})")
 
 # 🧠 QUANTA v11.5b NEURAL ENGINE
 try:
@@ -653,9 +654,10 @@ class Bot:
             self.ws_producer = None
             print("⚠️ WSEventProducer disabled (WS_FEED_AVAILABLE=False).")
 
-        # Nike Screener — market-wide 5m breakout scanner (watches ALL symbols)
+        # Thor Screener (internal key: nike) — market-wide 5m breakout scanner
         self.nike_screener: Optional['NikeScreener'] = None
         self._nike_open_symbols: set = set()   # symbols with an active Nike position
+        self._thor_context: dict = {}
 
         # Alert deduplication - prevent spamming same pair
         self.alerted_pairs = {}  # {symbol: last_alert_time}
@@ -868,6 +870,30 @@ class Bot:
             'max_bars_pre_bank': int(_ev.nike_max_bars_pre_bank),
             'max_bars_post_bank': int(_ev.nike_max_bars_post_bank),
         }
+
+    def _get_live_model_specialists(self):
+        return parse_live_model_specialists(getattr(self.cfg.events, 'model_live_specialists', 'nike'))
+
+    def _touch_thor_context(self, symbol, price, atr_5m, score=0.0, tier=''):
+        bars = int(getattr(self.cfg.events, 'thor_context_bars', 24))
+        expiry_unix = time.time() + max(1, bars) * 300
+        self._thor_context[symbol] = {
+            'entry_price': float(price),
+            'atr': float(atr_5m),
+            'score': float(score),
+            'tier': str(tier),
+            'expiry_unix': float(expiry_unix),
+            'display_agent': 'Thor',
+        }
+
+    def _get_thor_context(self, symbol):
+        ctx = self._thor_context.get(symbol)
+        if not ctx:
+            return None
+        if float(ctx.get('expiry_unix', 0.0)) <= time.time():
+            self._thor_context.pop(symbol, None)
+            return None
+        return ctx
 
     def _signal_handler(self, signum, frame):
         """Graceful shutdown — flat all positions, then save state."""
@@ -1536,7 +1562,7 @@ class Bot:
         if not self.nike_screener:
             return
 
-        logging.info("NikeConsumer: started")
+        logging.info("ThorConsumer: started")
 
         while not self.stop_event.is_set():
             try:
@@ -1551,19 +1577,20 @@ class Bot:
                     (sig.tier == 'B' and getattr(self.cfg.events, 'nike_tier_b_live', False)) or
                     (sig.tier == 'C' and getattr(self.cfg.events, 'nike_tier_c_live', False))
                 )
+                execute_live = execute_live and ('nike' in self._get_live_model_specialists())
 
                 # ── 1. Position guard ─────────────────────────────────────
                 # Skip if this symbol is already tracked by Nike or already open in paper.
                 if symbol in self._nike_open_symbols or (
                     hasattr(self, 'paper') and self.paper and symbol in getattr(self.paper, 'positions', {})
                 ):
-                    logging.debug(f"NikeConsumer: {symbol} already tracked, skip")
+                    logging.debug(f"ThorConsumer: {symbol} already tracked, skip")
                     continue
 
                 # Live execution tiers respect the concurrent-trade cap.
                 if execute_live and len(self._nike_open_symbols) >= self.NIKE_MAX_CONCURRENT:
                     logging.debug(
-                        f"NikeConsumer: max concurrent ({self.NIKE_MAX_CONCURRENT}) reached, "
+                        f"ThorConsumer: max concurrent ({self.NIKE_MAX_CONCURRENT}) reached, "
                         f"downgrading {symbol} to observe-only"
                     )
                     execute_live = False
@@ -1601,7 +1628,12 @@ class Bot:
                     'ppo_size_mult':   1.0,
                     'shap_summary':    None,
                     # Nike-specific metadata
-                    'agent':           'Nike',
+                    'agent':           'Thor',
+                    'display_agent':   'Thor',
+                    'source_regime_agent': 'Thor',
+                    'thor_context_active': True,
+                    'baldur_top_warning': False,
+                    'freya_context_valid': False,
                     'nike_body_pct':   sig.body_pct,
                     'nike_body_ratio': sig.body_ratio,
                     'nike_quiet_pct':  sig.avg_prior_pct,
@@ -1620,6 +1652,7 @@ class Bot:
                 opportunity['nike_entry_mode'] = sig.entry_mode
                 opportunity['nike_bs_floor'] = float(sig.bs_floor)
                 opportunity['nike_live_execute'] = bool(execute_live)
+                self._touch_thor_context(symbol, sig.close, sig.atr, score=sig.score, tier=sig.tier)
                 bs_ctx = self._compute_live_kou_score(
                     symbol,
                     sig.close,
@@ -1644,7 +1677,7 @@ class Bot:
                 bs_floor = float(max(bs_baseline, sig.bs_floor))
                 if bs_prob < bs_floor:
                     logging.info(
-                        f"NikeConsumer: BS veto {symbol} tier={sig.tier} "
+                        f"ThorConsumer: BS veto {symbol} tier={sig.tier} "
                         f"P={bs_prob:.2f} floor={bs_floor:.2f} src={bs_ctx.get('source', '?')}"
                     )
                     continue
@@ -1673,6 +1706,11 @@ class Bot:
                         bs_edge=bs_prob - bs_baseline,
                         bs_prob=bs_prob,
                         specialist='nike',
+                        display_agent='Thor',
+                        source_regime_agent='Thor',
+                        thor_context_active=True,
+                        baldur_top_warning=False,
+                        freya_context_valid=False,
                         exit_profile=opportunity['exit_profile'],
                         timeout_bars=opportunity['timeout_bars'],
                     )
@@ -1692,13 +1730,13 @@ class Bot:
                 def _release(sym=symbol, delay=hold_seconds):
                     time.sleep(delay)
                     self._nike_open_symbols.discard(sym)
-                    logging.info(f"NikeConsumer: position window closed for {sym}")
+                    logging.info(f"ThorConsumer: position window closed for {sym}")
                 threading.Thread(target=_release, daemon=True).start()
 
                 # ── 5. Telegram alert ─────────────────────────────────────
                 try:
                     msg = (
-                        f"⚡ *NIKE BREAKOUT*\n"
+                        f"⚡ *THOR BREAKOUT*\n"
                         f"`{symbol}` — {sig.date_str}\n\n"
                         f"Body : `{sig.body_pct:+.2f}%`  ({sig.body_ratio:.1f}× prior avg)\n"
                         f"Prior quiet : `{sig.avg_prior_pct:.3f}%`\n"
@@ -1718,21 +1756,21 @@ class Bot:
                     )
                     self.tg.send(msg)
                 except Exception as te:
-                    logging.debug(f"NikeConsumer Telegram error: {te}")
+                    logging.debug(f"ThorConsumer Telegram error: {te}")
 
                 logging.info(
-                    f"NikeConsumer: queued {symbol}  "
+                    f"ThorConsumer: queued {symbol}  "
                     f"entry={sig.close:.6g}  TP={sig.tp_price:.6g}  SL={sig.sl_price:.6g}  "
                     f"open_positions={len(self._nike_open_symbols)}"
                 )
                 logging.info(
-                    f"NikeConsumer: metadata {symbol} tier={sig.tier} mode={sig.entry_mode} "
+                    f"ThorConsumer: metadata {symbol} tier={sig.tier} mode={sig.entry_mode} "
                     f"score={sig.score:.1f} conf={sig.confidence:.0f}% size_mult={sig.size_mult:.2f} "
                     f"execute_live={execute_live}"
                 )
 
             except Exception as e:
-                logging.error(f"NikeConsumer error: {e}", exc_info=True)
+                logging.error(f"ThorConsumer error: {e}", exc_info=True)
                 time.sleep(1.0)
 
     def _telegram_alert_worker(self):
@@ -2613,6 +2651,8 @@ class Bot:
                     atr_4h = item['tf_analysis'].get('4h', {}).get('atr', 0)
                     volatility = (atr_4h / price * 100) if price > 0 and atr_4h else magnitude
                     
+                    _display_agent = display_agent_name(_dom_bs)
+                    _thor_ctx = self._get_thor_context(symbol)
                     opportunity = {
                         'symbol': symbol,
                         'direction': ml_dir,
@@ -2638,12 +2678,21 @@ class Bot:
                         'bs_baseline': float(max(0.0, min(1.0, _bs_win_prob_baseline))),
                         'bs_source': _bs_ctx.get('source', 'feature_fallback'),
                         'bs_specialist': _dom_bs,
+                        'display_agent': _display_agent,
+                        'source_regime_agent': 'Thor' if _thor_ctx else _display_agent,
+                        'thor_context_active': bool(_thor_ctx),
+                        'baldur_top_warning': False,
+                        'freya_context_valid': bool(_thor_ctx and ml_dir == 'BULLISH'),
                         'shap_summary': None  # v11: filled below
                     }
                     if _dom_bs == 'nike':
                         opportunity['specialist'] = 'nike'
+                        opportunity['agent'] = 'Thor'
                         opportunity['exit_profile'] = self._build_nike_exit_profile()
                         opportunity['timeout_bars'] = int(self.cfg.events.nike_max_bars_post_bank)
+                        _atr_thor = float(item['tf_analysis'].get('5m', {}).get('atr', 0.0) or 0.0)
+                        if ml_dir == 'BULLISH' and _atr_thor > 0:
+                            self._touch_thor_context(symbol, price, _atr_thor, score=ml_conf, tier='ML')
                     
                     # v11: SHAP feature importance for this prediction
                     if self.shap_explainer and self.ml and self.ml.catboost_model:
@@ -2704,14 +2753,15 @@ class Bot:
                         self.paper.tick(item['symbol'], price)
 
                     # Also send alerts if >= alert threshold AND passes PPO gate
-                    if passes_gate and ml_conf >= self.cfg.ml_confidence_min:
+                    _live_model_allowed = _dom_bs in self._get_live_model_specialists()
+                    if passes_gate and _live_model_allowed and ml_conf >= self.cfg.ml_confidence_min:
                         # Put a shallow copy so mutating 'for_rl' here does NOT corrupt
                         # the same dict already stored in rl_opportunities
                         alert_opp = dict(opportunity)
                         alert_opp['for_rl'] = False
                         self.result_queue.put(alert_opp)
-                    
-                    if passes_gate and price and ml_conf >= self.cfg.ml_confidence_min:
+
+                    if passes_gate and _live_model_allowed and price and ml_conf >= self.cfg.ml_confidence_min:
                         atr_percent = (item['tf_analysis'].get('4h', {}).get('atr', 0) / price) * 100 if price > 0 else 1
 
                         # ── BS BARRIER R/R + EDGE (Hull Ch.26 / Darling-Siegert 1953) ──
@@ -2742,6 +2792,11 @@ class Bot:
                                                  bs_edge=_bs_edge,
                                                  bs_prob=_live_bs_prob,
                                                  specialist=_dom_bs,
+                                                 display_agent=_display_agent,
+                                                 source_regime_agent='Thor' if _thor_ctx else _display_agent,
+                                                 thor_context_active=bool(_thor_ctx),
+                                                 baldur_top_warning=False,
+                                                 freya_context_valid=bool(_thor_ctx and ml_dir == 'BULLISH'),
                                                  exit_profile=self._build_nike_exit_profile() if _dom_bs == 'nike' else None,
                                                  timeout_bars=int(self.cfg.events.nike_max_bars_post_bank) if _dom_bs == 'nike' else None)
                         # v11.5: Store specialist probs for Brier score tracking at close
@@ -2866,7 +2921,8 @@ class Bot:
             print(f"🧠 ML: HYBRID (Odin LSTM-Attention + 7x Greek CatBoost Ensemble)")
             print(f"💾 Cache: FEATHER (2.5x faster) | 180-Day Global History")
             print(f"📈 Features: {BASE_FEATURE_COUNT} (Sentiment-Fused Multi-Timeframe)")
-            print(f"🎯 Agents: Athena | Ares | Hermes | Artemis | Chronos | Hephaestus | Divergence")
+            print(f"🎯 Live Norse Stack: Thor | Baldur | Freya")
+            print(f"📊 Silent Legacy Models: Athena | Ares | Hermes | Artemis | Chronos | Hephaestus")
             print(f"⚖️ Critics: Tyr | Vidar | Mimir | Heimdall | Loki | Ullr | Thor")
             print(f"😨 F&G: {fg['value']} ({fg['label']}) | Coins: {len(self.active_coins)}")
             print(f"⚙️  Producers: {self.cfg.num_producers} | Batch: {self.cfg.gpu_batch_size} | Queue: {self.cfg.queue_size}")
@@ -3828,7 +3884,7 @@ class Bot:
                 # Start WS event loop
                 self.ws_producer.start()
 
-                # ── Nike Screener (market-wide breakout scanner) ───────────
+                # ── Thor Screener (internal key: nike) ─────────────────────
                 if NIKE_SCREENER_AVAILABLE:
                     try:
                         all_futures = self.bnc.get_pairs()   # all USDT perpetuals
@@ -3846,11 +3902,11 @@ class Bot:
                         threading.Thread(
                             target=self._nike_signal_consumer,
                             daemon=True,
-                            name="NikeConsumer",
+                            name="ThorConsumer",
                         ).start()
-                        print(f"✅ NikeScreener active — watching {len(all_futures or symbols)} symbols")
+                        print(f"✅ Thor screener active — watching {len(all_futures or symbols)} symbols")
                     except Exception as _ne:
-                        print(f"⚠️  NikeScreener failed to start: {_ne}")
+                        print(f"⚠️  Thor screener failed to start: {_ne}")
 
                 # Main thread blocks here while keeping 90s stats loop alive
                 print("\n🚀 QUANTA HFT PIPELINE ACTIVE (Event-Driven / No REST polling)\n")

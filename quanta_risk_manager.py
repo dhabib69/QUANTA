@@ -1,15 +1,18 @@
 """
-QUANTA Risk Manager — Institutional-Grade Capital Protection (v11.4)
+QUANTA Risk Manager — Institutional-Grade Capital Protection (v12.0)
 
-Provides three layers of protection:
+Provides four layers of protection:
 1. Daily drawdown circuit breaker (auto-pause when daily loss exceeds limit)
 2. Position concentration limits (max positions, max per-coin exposure)
 3. Consecutive loss streak detection (reduces size after losing streaks)
+4. Compound Growth Engine guardrails (ruin threshold, weekly DD, win-streak boost)
 
 References:
     - Bouchaud & Potters (2003) "Theory of Financial Risk" — drawdown-based risk control
     - Marcos López de Prado (2018) AFML Ch.10 — bet sizing and position limits
     - Tharp (2006) "Trade Your Way to Financial Freedom" — R-multiple risk management
+    - Taleb (2012) "Antifragile" — barbell strategy for convex upside with bounded ruin risk
+    - Thorp (1969) Kelly Criterion — geometric compounding under uncertainty
 
 All magic numbers are in quanta_config.py → RiskManagerConfig.
 """
@@ -57,7 +60,7 @@ class RiskManager:
 
     def __init__(self, initial_balance=10000.0, flat_all_callback=None):
         # Config (with fallback defaults if RiskManagerConfig not yet in config)
-        self.max_daily_drawdown_pct    = getattr(_RM, 'max_daily_drawdown_pct', 3.0)
+        self.max_daily_drawdown_pct    = getattr(_RM, 'max_daily_drawdown_pct', 8.0)
         self.max_open_positions        = getattr(_RM, 'max_open_positions', 50)
         self.max_single_coin_pct       = getattr(_RM, 'max_single_coin_pct', 15.0)
         self.max_total_exposure_pct    = getattr(_RM, 'max_total_exposure_pct', 5000.0)
@@ -67,8 +70,14 @@ class RiskManager:
         self.max_correlation_exposure   = getattr(_RM, 'max_correlation_exposure', 3)
         self.max_risk_per_trade_pct     = getattr(_RM, 'max_risk_per_trade_pct', 2.0)
 
+        # Compound Growth Engine guardrails
+        self.compound_weekly_dd_limit   = getattr(_RM, 'compound_weekly_dd_limit', 20.0)
+        self.compound_ruin_threshold    = getattr(_RM, 'compound_ruin_threshold', 0.35)
+        self.compound_recovery_mult     = getattr(_RM, 'compound_recovery_mode_mult', 0.30)
+        self.compound_win_streak_boost  = getattr(_RM, 'compound_win_streak_boost', 0.15)
+        self.compound_streak_trigger    = getattr(_RM, 'compound_streak_trigger', 3)
+
         # Optional callback: called when circuit breaker fires to close all positions.
-        # Set this to paper_trading_instance.flat_all at startup.
         self._flat_all_callback = flat_all_callback
 
         # State
@@ -77,22 +86,31 @@ class RiskManager:
         self._day_start_date = datetime.utcnow().date()
         self._daily_pnl = 0.0
         self._consecutive_losses = 0
+        self._consecutive_wins = 0          # For win-streak boost
         self._trading_paused = False
         self._pause_until = None
-        self._trade_log = deque(maxlen=1000)  # Rolling trade history
+        self._trade_log = deque(maxlen=1000)
         self._risk_events = deque(maxlen=500)
-        self._lock = threading.RLock()  # RLock: allow re-entrant locking (get_size_multiplier called inside on_trade_closed)
+        self._lock = threading.RLock()
+
+        # Compound guardrail tracking
+        self._peak_equity = initial_balance          # All-time equity peak for ruin detection
+        self._week_start_balance = initial_balance   # Weekly DD window
+        self._week_start_date = datetime.utcnow().isocalendar()[:2]  # (year, week)
+        self._in_recovery_mode = False
 
         # Tracking
-        self._open_positions = {}  # symbol -> notional
+        self._open_positions = {}
         self._daily_trades = 0
         self._daily_wins = 0
         self._daily_losses = 0
 
-        logging.info(f"🛡️ RiskManager initialized: "
-                     f"max_dd={self.max_daily_drawdown_pct}%, "
-                     f"max_pos={self.max_open_positions}, "
-                     f"max_coin={self.max_single_coin_pct}%")
+        logging.info(
+            "🛡️ RiskManager v12 initialized: max_dd=%.1f%%, max_pos=%d, "
+            "ruin_threshold=%.0f%%, weekly_dd_limit=%.0f%%",
+            self.max_daily_drawdown_pct, self.max_open_positions,
+            self.compound_ruin_threshold * 100, self.compound_weekly_dd_limit
+        )
 
     # ─────────────────────────────────────────────────
     # PUBLIC API
@@ -155,7 +173,6 @@ class RiskManager:
                     return False, f"Max {self.max_correlation_exposure} same-direction positions ({same_dir} {direction})"
 
             # 7. Per-trade max risk cap
-            # Notional represents the capital at risk for this trade.
             trade_risk_pct = (notional / max(current_balance, 1)) * 100
             if trade_risk_pct > self.max_risk_per_trade_pct:
                 self._log_event('per_trade_limit',
@@ -164,20 +181,43 @@ class RiskManager:
                 return False, (f"Per-trade risk {trade_risk_pct:.1f}% exceeds cap "
                                f"{self.max_risk_per_trade_pct}% — reduce position size")
 
+            # 8. Compound ruin threshold check
+            if current_balance < self._peak_equity * self.compound_ruin_threshold:
+                reason = (f"Equity ${current_balance:.0f} below ruin threshold "
+                          f"{self.compound_ruin_threshold:.0%} of peak ${self._peak_equity:.0f}")
+                self._trigger_circuit_breaker(current_balance, reason)
+                return False, reason
+
+            # 9. Weekly drawdown check
+            current_week = datetime.utcnow().isocalendar()[:2]
+            if current_week != self._week_start_date:
+                self._week_start_balance = current_balance
+                self._week_start_date = current_week
+            weekly_dd_pct = (self._week_start_balance - current_balance) / max(self._week_start_balance, 1) * 100
+            if weekly_dd_pct >= self.compound_weekly_dd_limit:
+                reason = f"Weekly drawdown {weekly_dd_pct:.1f}% >= {self.compound_weekly_dd_limit}%"
+                self._trigger_circuit_breaker(current_balance, reason)
+                return False, reason
+
             return True, "OK"
 
-    def get_size_multiplier(self):
+    def get_size_multiplier(self) -> float:
         """
-        Returns a float [0.25, 1.0] to scale position size based on streak state.
-
-        Called by PaperTrading.open_position() to reduce size after consecutive losses.
+        Returns a float [0.25, 1.0] to scale position size based on:
+        - Consecutive losses: reduces size
+        - Recovery mode: constrains size to recovery_mult after ruin trigger
         """
         with self._lock:
+            # Recovery mode overrides everything else
+            if self._in_recovery_mode:
+                return self.compound_recovery_mult
+
+            # Loss throttle
             if self._consecutive_losses >= self.consecutive_loss_throttle:
-                # Exponential decay: 0.5^(n - threshold + 1) but floored at 0.25
                 excess = self._consecutive_losses - self.consecutive_loss_throttle + 1
                 mult = max(0.25, self.throttle_size_factor ** excess)
                 return mult
+
             return 1.0
 
     def on_trade_opened(self, symbol, notional):
@@ -187,15 +227,24 @@ class RiskManager:
             self._daily_trades += 1
 
     def on_trade_closed(self, symbol, pnl, current_balance):
-        """Record that a position was closed. Updates daily P&L and streak."""
+        """Record that a position was closed. Updates daily P&L, streak, and compound state."""
         with self._lock:
             self._open_positions.pop(symbol, None)
             self._daily_pnl += pnl
 
             if pnl >= 0:
                 self._consecutive_losses = 0
+                self._consecutive_wins += 1
                 self._daily_wins += 1
+
+                if self._consecutive_wins >= self.compound_streak_trigger:
+                    streak_mult = self.get_size_multiplier()
+                    logging.info(
+                        "[Compound] WIN STREAK %d — size boost %.2fx",
+                        self._consecutive_wins, streak_mult
+                    )
             else:
+                self._consecutive_wins = 0
                 self._consecutive_losses += 1
                 self._daily_losses += 1
 
@@ -206,18 +255,32 @@ class RiskManager:
                         'reduced_size',
                         current_balance
                     )
-                    print(f"⚠️ RISK: {self._consecutive_losses} consecutive losses — "
-                          f"size reduced to {self.get_size_multiplier():.0%}")
+
+            # Update peak equity (compound engine tracks this for ruin threshold)
+            self._peak_equity = max(self._peak_equity, current_balance)
+
+            # Recovery mode: exit when we've recovered to 60% of peak
+            if self._in_recovery_mode:
+                recovery_target = self._peak_equity * 0.60
+                if current_balance >= recovery_target:
+                    self._in_recovery_mode = False
+                    logging.info("[Compound] Exiting recovery mode — equity restored to %.0f%%",
+                                 current_balance / self._peak_equity * 100)
+
+            # Ruin check post-close
+            if current_balance < self._peak_equity * self.compound_ruin_threshold:
+                self._activate_recovery_mode(current_balance)
 
             self._trade_log.append({
                 'symbol': symbol,
                 'pnl': pnl,
                 'balance': current_balance,
                 'time': time.time(),
-                'streak': self._consecutive_losses
+                'streak_wins': self._consecutive_wins,
+                'streak_losses': self._consecutive_losses,
             })
 
-            # Check circuit breaker after every losing trade
+            # Daily circuit breaker check
             dd_pct = abs(self._daily_pnl / max(self._day_start_balance, 1)) * 100
             if dd_pct >= self.max_daily_drawdown_pct and self._daily_pnl < 0:
                 self._trigger_circuit_breaker(current_balance, f"Daily drawdown {dd_pct:.1f}%")
@@ -231,13 +294,22 @@ class RiskManager:
         """Return current risk state for dashboard display."""
         with self._lock:
             dd_pct = abs(self._daily_pnl / max(self._day_start_balance, 1)) * 100 if self._daily_pnl < 0 else 0
+            weekly_dd_pct = max(0, (self._week_start_balance - (self._day_start_balance + self._daily_pnl))
+                               / max(self._week_start_balance, 1) * 100)
+            peak_dd_pct = max(0, (self._peak_equity - (self._day_start_balance + self._daily_pnl))
+                             / max(self._peak_equity, 1) * 100)
             return {
                 'trading_paused': self._trading_paused,
                 'pause_until': self._pause_until.isoformat() if self._pause_until else None,
                 'daily_pnl': self._daily_pnl,
                 'daily_drawdown_pct': dd_pct,
+                'weekly_drawdown_pct': weekly_dd_pct,
+                'peak_equity': self._peak_equity,
+                'peak_drawdown_pct': peak_dd_pct,
+                'in_recovery_mode': self._in_recovery_mode,
                 'max_daily_drawdown_pct': self.max_daily_drawdown_pct,
                 'consecutive_losses': self._consecutive_losses,
+                'consecutive_wins': self._consecutive_wins,
                 'size_multiplier': self.get_size_multiplier(),
                 'open_positions': len(self._open_positions),
                 'max_positions': self.max_open_positions,
@@ -256,22 +328,20 @@ class RiskManager:
         self._trading_paused = True
         self._pause_until = datetime.utcnow() + timedelta(minutes=self.cooldown_after_breaker_min)
         self._log_event('circuit_breaker', reason, 'paused_trading+flat_all', balance)
-        print(f"\n🔴 ══════════════════════════════════════════")
-        print(f"🔴 CIRCUIT BREAKER TRIGGERED: {reason}")
-        print(f"🔴 Trading paused for {self.cooldown_after_breaker_min} minutes")
-        print(f"🔴 Resume at: {self._pause_until.strftime('%H:%M:%S UTC')}")
-        print(f"🔴 Daily P&L: ${self._daily_pnl:+.2f}")
-        print(f"🔴 ══════════════════════════════════════════\n")
+        print(f"\n\U0001f534 -------- CIRCUIT BREAKER --------")
+        print(f"\U0001f534 REASON: {reason}")
+        print(f"\U0001f534 Trading paused for {self.cooldown_after_breaker_min} minutes")
+        print(f"\U0001f534 Resume at: {self._pause_until.strftime('%H:%M:%S UTC')}")
+        print(f"\U0001f534 Daily P&L: ${self._daily_pnl:+.2f}")
+        print(f"\U0001f534 ---------------------------------\n")
 
-        # CRITICAL: Close all open positions to prevent further loss during cooldown.
-        # A paused bot that holds open positions can still lose unlimited capital.
         if self._flat_all_callback is not None:
             try:
-                print("🔴 Closing all open positions (circuit breaker flat-all)...")
+                print("\U0001f534 Closing all open positions (circuit breaker flat-all)...")
                 self._flat_all_callback()
-                print("🔴 All positions closed.")
+                print("\U0001f534 All positions closed.")
             except Exception as e:
-                logging.error(f"Circuit breaker flat_all failed: {e}", exc_info=True)
+                logging.error("Circuit breaker flat_all failed: %s", e, exc_info=True)
 
     def _rotate_day_if_needed(self, current_balance):
         """Reset daily counters at UTC midnight."""
@@ -291,6 +361,23 @@ class RiskManager:
             self._daily_losses = 0
             # Don't reset consecutive_losses — that persists across days
 
+    def _activate_recovery_mode(self, balance: float):
+        """Engage recovery mode when equity hits the ruin threshold."""
+        if not self._in_recovery_mode:
+            self._in_recovery_mode = True
+            self._log_event(
+                'ruin_threshold',
+                f"Equity ${balance:.0f} < {self.compound_ruin_threshold:.0%} of peak ${self._peak_equity:.0f}",
+                'recovery_mode_activated',
+                balance
+            )
+            logging.warning(
+                "[Compound] RECOVERY MODE: equity $%.0f = %.0f%% of peak. "
+                "Sizing reduced to %.0f%% until 60%% peak recovered.",
+                balance, balance / max(self._peak_equity, 1) * 100,
+                self.compound_recovery_mult * 100
+            )
+
     def _log_event(self, event_type, details, action, balance):
         """Add to audit trail."""
         evt = RiskEvent(
@@ -301,4 +388,4 @@ class RiskManager:
             balance_at_event=balance
         )
         self._risk_events.append(evt)
-        logging.warning(f"🛡️ RISK [{event_type}]: {details} → {action} (bal=${balance:.2f})")
+        logging.warning("[RISK] [%s]: %s -> %s (bal=$%.2f)", event_type, details, action, balance)

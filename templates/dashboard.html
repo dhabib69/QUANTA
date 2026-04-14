@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QUANTA v11.5b Dashboard</title>
+  <title>QUANTA v11.6 Dashboard</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
@@ -695,7 +695,7 @@
 <div class="header">
   <div class="header-brand">
     <span class="header-logo">⚡ QUANTA</span>
-    <span class="version-badge">v11.5b</span>
+    <span class="version-badge">v11.6</span>
   </div>
   <div class="header-status">
     <div class="status-dot" id="status-dot"></div>
@@ -709,6 +709,9 @@
 <div class="tabs">
   <div class="tab active" onclick="showTab('overview')">
     <span class="tab-icon">📊</span> Overview
+  </div>
+  <div class="tab" onclick="showTab('norse')">
+    <span class="tab-icon">⚡</span> Norse
   </div>
   <div class="tab" onclick="showTab('predictions')">
     <span class="tab-icon">🎯</span> Predictions
@@ -809,6 +812,123 @@
 
   <!-- Drift Alerts -->
   <div id="drift-alerts-container" style="display:none;" class="mb"></div>
+</div>
+
+<!-- ═══════════════════ NORSE TAB ═══════════════════ -->
+<div id="tab-norse" class="content panel">
+
+  <!-- Hero result -->
+  <div class="grid grid-3 mb">
+    <div class="card" style="border-color:rgba(0,230,118,0.3);background:rgba(0,230,118,0.04);">
+      <div class="card-title"><span class="icon">🚀</span> 1-Year Simulation Result</div>
+      <div class="metric green" style="font-size:48px;">191x</div>
+      <div class="metric-label">$10,000 → $1,922,607 · +19,126%</div>
+      <div class="metric-sub" style="margin-top:8px;">727 trades · Max DD 43.74% · NO liquidation</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">📐</span> Edge Statistics</div>
+      <div class="stat-row"><span class="stat-label">Profit Factor</span><span class="stat-value" style="color:var(--green)">2.376</span></div>
+      <div class="stat-row"><span class="stat-label">TP Rate</span><span class="stat-value">49.79%</span></div>
+      <div class="stat-row"><span class="stat-label">Decided Win Rate</span><span class="stat-value">50.49%</span></div>
+      <div class="stat-row"><span class="stat-label">Avg PnL / Trade</span><span class="stat-value" style="color:var(--green)">+$2,630</span></div>
+      <div class="stat-row"><span class="stat-label">Avg Hold</span><span class="stat-value">30 bars</span></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">🔬</span> Optuna Search</div>
+      <div class="stat-row"><span class="stat-label">Trials</span><span class="stat-value">2,400</span></div>
+      <div class="stat-row"><span class="stat-label">Best Score</span><span class="stat-value" style="color:var(--accent-2)">15.6361</span></div>
+      <div class="stat-row"><span class="stat-label">Method</span><span class="stat-value" style="font-size:11px">TPE + Walk-Forward</span></div>
+      <div class="stat-row"><span class="stat-label">OOS Folds</span><span class="stat-value">5 · Calmar &gt;4 all</span></div>
+      <div class="stat-row"><span class="stat-label">Symbols</span><span class="stat-value">218</span></div>
+    </div>
+  </div>
+
+  <!-- Walk-forward folds -->
+  <div class="grid grid-2 mb">
+    <div class="card">
+      <div class="card-title"><span class="icon">📊</span> Walk-Forward Fold Results (OOS)</div>
+      <table>
+        <thead><tr><th>Fold</th><th>Trades</th><th>Calmar</th><th>Growth%</th><th>MaxDD%</th><th>PF</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>35</td><td style="color:var(--green)">19.84</td><td>+56.95%</td><td>2.87%</td><td>5.860</td></tr>
+          <tr><td>1</td><td>31</td><td style="color:var(--green)">25.08</td><td>+42.48%</td><td>1.69%</td><td>6.422</td></tr>
+          <tr><td>2</td><td>44</td><td style="color:var(--yellow)">4.35</td><td>+28.90%</td><td>6.64%</td><td>2.423</td></tr>
+          <tr><td>3</td><td>95</td><td style="color:var(--green)">17.85</td><td>+117.25%</td><td>6.57%</td><td>2.559</td></tr>
+          <tr><td>4</td><td>44</td><td style="color:var(--yellow)">4.47</td><td>+17.33%</td><td>3.88%</td><td>1.857</td></tr>
+          <tr style="border-top:1px solid var(--border);font-weight:700"><td>Median</td><td>—</td><td style="color:var(--green)">17.85</td><td>—</td><td>—</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">🏆</span> Top Big Wins</div>
+      <table>
+        <thead><tr><th>Symbol</th><th>Net PnL</th><th>ATR</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td><b>XPLUSDT</b></td><td style="color:var(--green)">+$235,722</td><td>+10.88</td><td style="font-size:11px;color:var(--text-muted)">runner capture</td></tr>
+          <tr><td><b>DODOXUSDT</b></td><td style="color:var(--green)">+$215,026</td><td>+11.85</td><td style="font-size:11px;color:var(--text-muted)">runner capture</td></tr>
+          <tr><td><b>BANUSDT</b></td><td style="color:var(--green)">+$172,810</td><td>+8.82</td><td style="font-size:11px;color:var(--text-muted)">low top-risk trend</td></tr>
+          <tr><td><b>RESOLVUSDT</b></td><td style="color:var(--green)">+$138,731</td><td>+9.36</td><td style="font-size:11px;color:var(--text-muted)">low top-risk trend</td></tr>
+          <tr><td><b>JELLYJELLYUSDT</b></td><td style="color:var(--green)">+$118,931</td><td>+11.23</td><td style="font-size:11px;color:var(--text-muted)">low top-risk trend</td></tr>
+          <tr><td><b>STEEMUSDT</b></td><td style="color:var(--green)">+$112,786</td><td>+6.44</td><td style="font-size:11px;color:var(--text-muted)">runner capture</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Active optimized params -->
+  <div class="section-title mb"><span>⚙️</span> Active Optimized Parameters (Live in Bot)</div>
+  <div class="grid grid-3 mb">
+    <div class="card">
+      <div class="card-title"><span class="icon">⚔️</span> Thor Entry Filters</div>
+      <div class="stat-row"><span class="stat-label">Score Floor</span><span class="stat-value" style="color:var(--accent-2)">68.0</span></div>
+      <div class="stat-row"><span class="stat-label">Tiers</span><span class="stat-value">A, B</span></div>
+      <div class="stat-row"><span class="stat-label">Wave Strength Min</span><span class="stat-value">40.0</span></div>
+      <div class="stat-row"><span class="stat-label">Top-Risk Max</span><span class="stat-value">70.0</span></div>
+      <div class="stat-row"><span class="stat-label">MAE Veto</span><span class="stat-value">8.00 ATR</span></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">🛑</span> Thor Exit Management</div>
+      <div class="stat-row"><span class="stat-label">Stop Loss</span><span class="stat-value" style="color:var(--red)">2.40 ATR</span></div>
+      <div class="stat-row"><span class="stat-label">Bank Level</span><span class="stat-value" style="color:var(--green)">5.40 ATR @ 45%</span></div>
+      <div class="stat-row"><span class="stat-label">Trail Activate</span><span class="stat-value">1.00 ATR</span></div>
+      <div class="stat-row"><span class="stat-label">Trail Gap</span><span class="stat-value">6.00 ATR</span></div>
+      <div class="stat-row"><span class="stat-label">Baldur Exit Score</span><span class="stat-value">65.0</span></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">📊</span> Pump Analytics</div>
+      <div class="stat-row"><span class="stat-label">Pumps Recorded</span><span class="stat-value">1,031</span></div>
+      <div class="stat-row"><span class="stat-label">Median Max Run-Up</span><span class="stat-value" style="color:var(--green)">5.40 ATR</span></div>
+      <div class="stat-row"><span class="stat-label">Median Max Drawdown</span><span class="stat-value" style="color:var(--red)">5.00 ATR</span></div>
+      <div class="stat-row"><span class="stat-label">Any Green (≥0 ATR)</span><span class="stat-value">99.9%</span></div>
+      <div class="stat-row"><span class="stat-label">Reach ≥0.5 ATR</span><span class="stat-value">94.4%</span></div>
+    </div>
+  </div>
+
+  <!-- Key insight -->
+  <div class="card" style="border-color:rgba(108,92,231,0.3);background:rgba(108,92,231,0.04);">
+    <div class="card-title"><span class="icon">💡</span> Mathematical Edge Summary</div>
+    <div class="grid grid-3" style="margin-top:8px;">
+      <div class="math-block" style="margin:0">E[trade] = 0.4979 × 2.376L − 0.5021 × L
+       = +0.681L per trade
+
+Kelly% ≈ 28.7% (near full Kelly)
+Geo. return = 191.26^(1/727) − 1
+            ≈ +0.726% per trade</div>
+      <div class="math-block" style="margin:0">Big winners (≥+2.0 ATR):
+  Count:           734 / 1031
+  Median deepest red:  5.53 ATR
+  Mean deepest red:    5.85 ATR
+
+→ SL at 2.40 ATR is load-bearing.
+  Tightening it kills the right tail.</div>
+      <div class="math-block" style="margin:0">Top learned features (SL=2.4):
+  + wave_strength_at_entry  +0.278
+  + weighted_trend           +0.304
+  − pre_impulse_r2          −0.225
+  − nike_score               −0.205
+  − bs_prob                  −0.130</div>
+    </div>
+  </div>
 </div>
 
 <!-- ═══════════════════ PREDICTIONS TAB ═══════════════════ -->
@@ -933,7 +1053,7 @@
 <!-- ═══════════════════ TECHNOLOGY TAB ═══════════════════ -->
 <div id="tab-tech" class="content panel">
   <div class="section-title mb">
-    <span>🔬</span> QUANTA v11.5b — Advanced Technology Stack
+    <span>🔬</span> QUANTA v11.6 — Advanced Technology Stack
   </div>
   <p style="color:var(--text-secondary);margin-bottom:20px;font-size:13px;max-width:800px;line-height:1.7">
     Every prediction in QUANTA is backed by peer-reviewed research. Below is the complete list of mathematical models, algorithms, and techniques powering the system.
@@ -1277,7 +1397,7 @@ let equityChart, outcomeChart;
 function showTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  const tabs = ['overview','predictions','models','system','settings','tech'];
+  const tabs = ['overview','norse','predictions','models','system','settings','tech'];
   const idx = tabs.indexOf(name);
   if (idx !== -1) {
       document.querySelectorAll('.tab')[idx].classList.add('active');
