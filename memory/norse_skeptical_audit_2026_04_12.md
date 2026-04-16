@@ -1,0 +1,23 @@
+# Norse Skeptical Audit (2026-04-12)
+
+- Audited `norse_runs/20260412_154336/NORSE_YEAR_PAPER_REPORT_20260412_154336.md` and its CSV artifacts.
+- Wrote the user-facing skeptical memo to `skeptic_report.md`.
+- Verified the reported full-sim result is internally consistent:
+  - Thor net PnL sums to `$123,835.53`
+  - Thor executed `1997` trades
+  - Freya and Baldur executed `0`
+- Confirmed the main blocker is the cache-vs-full-sim mismatch:
+  - cached estimate: `$326,242.37`, `8.42%` max drawdown
+  - full sim: `$133,835.53`, `26.63%` max drawdown
+  - capital delta: `59.0%`
+  - drawdown delta: `18.21pp`
+- Traced that mismatch to the tuning architecture:
+  - `norse_tuner/cached_evaluator.py` compounds cached `realized_atr` rows as an approximation
+  - the real simulator in `quanta_norse_year_sim.py::_simulate_capital(...)` also models free cash, margin reservation, leverage caps, capital caps, and concurrent-position limits
+- Quantified concentration risk from the trade CSV:
+  - top 10 trades contribute `54.16%` of total net PnL
+  - top 20 trades contribute `69.99%`
+- Audit conclusion:
+  - strong Thor paper-sim year
+  - not yet enough to claim optimizer is proven
+  - not yet enough to claim Norse multi-agent portfolio is proven

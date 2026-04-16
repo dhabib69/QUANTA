@@ -357,6 +357,18 @@ OPTUNA_MAX_SEARCH_ROWS  = 3000
 class DeepMLEngine:
     def __init__(self, cfg, bnc, mtf, candle_store=None, sentiment_engine=None):
         self.cfg = cfg
+        # Ensure BASE_FEATURE_COUNT is always accessible on cfg (V12 compat)
+        if not hasattr(self.cfg, 'BASE_FEATURE_COUNT'):
+            self.cfg.BASE_FEATURE_COUNT = int(getattr(getattr(self.cfg, 'model', None), 'base_feature_count', 278))
+        # Ensure timeframes list is accessible on cfg
+        if not hasattr(self.cfg, 'timeframes'):
+            self.cfg.timeframes = ['5m', '15m', '1h', '4h', '6h', '12h', '1d']
+        # Ensure tf_weights dict is accessible on cfg
+        if not hasattr(self.cfg, 'tf_weights'):
+            self.cfg.tf_weights = {'5m': 0.05, '15m': 0.10, '1h': 0.20, '4h': 0.25, '6h': 0.15, '12h': 0.15, '1d': 0.10}
+        # Ensure historical_days is accessible on cfg
+        if not hasattr(self.cfg, 'historical_days'):
+            self.cfg.historical_days = int(getattr(getattr(self.cfg, 'model', None), 'history_days', 180))
         self.bnc = bnc
         self.mtf = mtf
         self.candle_store = candle_store  # v8.0: Access to raw candle sequences
@@ -370,31 +382,15 @@ class DeepMLEngine:
 
         # 🧠 HYBRID ENGINE: TFT + CatBoost (Lim et al. 2021)
         self.tft_model = None
-        self.tft_optimizer = None
-        self.tft_trained = False  # v8.0: Flag for TFT readiness
         
         # 🚀 HFT OPTIMIZATIONS (v10 Ultimate)
         self.hmm_models = {}
         self.hmm_last_fit = {}
         self.rt_cache = {}  # Async real-time REST cache
-        self._ob_depth_history = defaultdict(lambda: deque(maxlen=10))  # Nike: order book depth rolling buffer
+        self._ob_depth_history = defaultdict(lambda: deque(maxlen=10))  # Thor: order book depth rolling buffer
         self._bs_avg_bars_to_hit = {}  # BS implied vol: symbol -> avg bars-to-hit (updated by bot after close)
-        if TFT_AVAILABLE:
-            self.tft_model = TemporalFusionTransformer(
-                input_size=self.cfg.BASE_FEATURE_COUNT,  # 278 features (v11.5b)
-                hidden_size=TFT_HIDDEN_SIZE,     # 64 (Lim 2021, MX130 optimized)
-                num_heads=TFT_NUM_HEADS,         # 4 (Lim 2021)
-                dropout=TFT_DROPOUT              # 0.1
-            )
-            if USE_GPU and torch.cuda.is_available():
-                self.tft_model = self.tft_model.cuda()
-                # Log VRAM usage
-                tft_params = sum(p.numel() for p in self.tft_model.parameters())
-                tft_vram_mb = tft_params * 4 / 1024**2  # FP32
-                print(f"✅ TFT Neural Network initialized on GPU ({tft_params:,} params, ~{tft_vram_mb:.1f}MB)")
-            else:
-                print("⚠️  TFT Neural Network initialized on CPU (Slow!)")
-        
+        # TFT fully removed in V12 Thor architecture
+
         # 🚀 FUTURES X-RAY CACHE (v10.2)
         self.futures_stats_cache = {}  # symbol -> {data: list, ts: time}
 
@@ -576,7 +572,7 @@ class DeepMLEngine:
             + [275]                   # BS: theoretical win prob (macro baseline)
         )
 
-        # Nike: Impulse Continuation — microstructure + momentum context + new impulse features
+        # Thor: Impulse Continuation — microstructure + momentum context + new impulse features
         _IMPULSE = (
             _atr_per_tf + _rsi_per_tf             # per-TF ATR + RSI
             + _macd_per_tf + _bb_per_tf           # momentum context: MACD + BB (impulse continuation vs failure)
@@ -605,7 +601,8 @@ class DeepMLEngine:
             'domain_macro':        _mask(_MACRO_SENTIMENT),
             'domain_impulse':      _mask(_IMPULSE),
         }
-
+
+
         # Load previously learned routing weights (falls back to hand-coded if missing)
         self._load_regime_routing_weights()
         # ═══════════════════════════════════════════════════════════════
@@ -616,104 +613,23 @@ class DeepMLEngine:
         # ═══════════════════════════════════════════════════════════════
         self._regime_routing = {
             #              regime: 0(bull)  1(range)  2(bear)
-            'athena':             [1.0,     0.3,      0.1],
-            'ares':               [0.1,     0.3,      1.0],
-            'hermes':             [0.3,     1.0,      0.3],
-            'hephaestus':         [0.7,     0.6,      0.4],
-            'nike':               [0.7,     0.5,      0.9],
-            'artemis':            [0.6,     0.4,      0.7],
-            'chronos':            [0.4,     0.8,      0.6],
+            'thor':               [1.0,     1.0,      1.0],  # Ragnarok: Thor rides all regimes
         }
 
         # Per-agent Brier score tracking (v11.5)
         # Tracks rolling calibration quality: Brier = mean((predicted_prob - actual)^2)
         # Lower = better calibrated. Used to dynamically adjust ensemble weights.
-        self._brier_scores = {name: {'sum': 0.0, 'count': 0, 'rolling': deque(maxlen=500)}
-                              for name in ['athena', 'ares', 'hermes', 'hephaestus',
-                                           'nike', 'artemis', 'chronos']}
+        self._brier_scores = {'thor': {'sum': 0.0, 'count': 0, 'rolling': deque(maxlen=500)}}
 
         self.specialist_models = {
-            'athena': {
+            'thor': {
                 'model': None,
                 'scaler': StandardScaler(),
                 'calibrator': None,
                 'generation': 0,
-                'weight': 1.0 / 7,
-                'description': 'Athena (Trend Rider) — Goddess of strategy; handles strong, undeniable uptrends',
-                'coin_filter': 'athena',
-                'performance': [],
-                'hyperparams': {
-                    'iterations': 1500, 'learning_rate': 0.05, 'depth': 7,
-                    'l2_leaf_reg': 5.0, 'subsample': 0.8, 'bootstrap_type': 'Bernoulli',
-                    'random_seed': 42,
-                    'gpu_ram_part': 0.50
-                },
-                'feature_mask': 'domain_trend',
-                'recency_boost': 1.0,
-            },
-            'ares': {
-                'model': None,
-                'scaler': StandardScaler(),
-                'calibrator': None,
-                'generation': 0,
-                'weight': 1.0 / 7,
-                'description': 'Ares (Trend Crusher) — God of war; shorting weak bounces in bleeding downtrends',
-                'coin_filter': 'ares',
-                'performance': [],
-                'hyperparams': {
-                    'iterations': 1200, 'learning_rate': 0.15, 'depth': 5,
-                    'l2_leaf_reg': 5.0, 'subsample': 0.8, 'bootstrap_type': 'Bernoulli',
-                    'random_seed': 49,
-                    'gpu_ram_part': 0.50
-                },
-                'feature_mask': 'domain_trend_short',
-                'recency_boost': 1.0,
-            },
-            'hermes': {
-                'model': None,
-                'scaler': StandardScaler(),
-                'calibrator': None,
-                'generation': 0,
-                'weight': 1.0 / 7,
-                'description': 'Hermes (Range Navigator) — The fast messenger; buying bottoms and selling tops of tight sideways channels',
-                'coin_filter': 'hermes',
-                'performance': [],
-                'hyperparams': {
-                    'iterations': 800, 'learning_rate': 0.30, 'depth': 4,
-                    'l2_leaf_reg': 5.0, 'subsample': 0.8, 'bootstrap_type': 'Bernoulli',
-                    'random_seed': 43,
-                    'gpu_ram_part': 0.50
-                },
-                'feature_mask': 'domain_mean_revert',
-                'recency_boost': 1.0,
-            },
-            'hephaestus': {
-                'model': None,
-                'scaler': StandardScaler(),
-                'calibrator': None,
-                'generation': 0,
-                'weight': 1.0 / 7,
-                'description': 'Hephaestus (Structural Forger) — The blacksmith; trades structural bounces on highly liquid anchor assets',
-                'coin_filter': 'hephaestus',
-                'performance': [],
-                'hyperparams': {
-                    'iterations': 1200, 'learning_rate': 0.10, 'depth': 5,
-                    'l2_leaf_reg': 5.0, 'subsample': 0.8, 'bootstrap_type': 'Bernoulli',
-                    'random_strength': 3.0,
-                    'random_seed': 44,
-                    'gpu_ram_part': 0.50
-                },
-                'feature_mask': 'domain_structural',
-                'recency_boost': 1.0,
-            },
-            'nike': {
-                'model': None,
-                'scaler': StandardScaler(),
-                'calibrator': None,
-                'generation': 0,
-                'weight': 1.0 / 7,
+                'weight': 1.0,
                 'description': 'Thor (Impulse Rider) — Norse breakout specialist; single-candle explosive moves, predicts continuation vs death',
-                'coin_filter': 'nike',
+                'coin_filter': 'thor',
                 'performance': [],
                 'hyperparams': {
                     'iterations': 1200, 'learning_rate': 0.08, 'depth': 6,
@@ -723,43 +639,7 @@ class DeepMLEngine:
                 },
                 'feature_mask': 'domain_impulse',
                 'recency_boost': 1.0,
-            },
-            'artemis': {
-                'model': None,
-                'scaler': StandardScaler(),
-                'calibrator': None,
-                'generation': 0,
-                'weight': 1.0 / 7,
-                'description': 'Artemis (Stealth Accumulator) — Goddess of the hunt; detects hidden volume surges without structural breakouts',
-                'coin_filter': 'artemis',
-                'performance': [],
-                'hyperparams': {
-                    'iterations': 1214, 'learning_rate': 0.18, 'depth': 6,
-                    'l2_leaf_reg': 5.0, 'subsample': 0.8, 'bootstrap_type': 'Bernoulli',
-                    'random_seed': 46,
-                    'gpu_ram_part': 0.50
-                },
-                'feature_mask': 'domain_volatility',
-                'recency_boost': 1.0,
-            },
-            'chronos': {
-                'model': None,
-                'scaler': StandardScaler(),
-                'calibrator': None,
-                'generation': 0,
-                'weight': 1.0 / 7,
-                'description': 'Chronos (Deep Reversal) — Personification of time; evaluates v-shape bounces off RSI extremes',
-                'coin_filter': 'chronos',
-                'performance': [],
-                'hyperparams': {
-                    'iterations': 1500, 'learning_rate': 0.10, 'depth': 7,
-                    'l2_leaf_reg': 5.0, 'subsample': 0.8, 'bootstrap_type': 'Bernoulli',
-                    'random_seed': 47,
-                    'gpu_ram_part': 0.50
-                },
-                'feature_mask': 'domain_macro',
-                'recency_boost': 5.0,
-            },
+            }
         }
         
         # ========================================
@@ -818,10 +698,10 @@ class DeepMLEngine:
         self._load_models()
         
         print(f"\n" + "─"*70)
-        print(f"🧬 DEEP ML ENGINE — PANTHEONS READY")
+        print(f"🧬 DEEP ML ENGINE — THOR V12 READY")
         print(f"─"*70)
-        print(f"• Features: {self.cfg.BASE_FEATURE_COUNT} (Sentiment-Fused Multi-Timeframe v2)")
-        print(f"• Ensemble: 7-Agent Pantheon + Odin (TFT) + Heimdall (PPO)")
+        print(f"• Features: {self.cfg.BASE_FEATURE_COUNT} (Impulse-Fused Multi-Timeframe v2)")
+        print(f"• Engine: Thor Single-Specialist Impulse Engine")
         print(f"• News Engine: L&M 2011 Lexicon + 4-Source RSS Polling")
         print(f"• History: 180-Day Sliding Window")
         print(f"─"*70 + "\n")
@@ -1152,12 +1032,7 @@ class DeepMLEngine:
             #    If a future agent has max_bars > 48, the gap auto-adjusts.
             split_idx = int(len(X_arr) * (1 - CATBOOST_VAL_SPLIT))
             _ev_cfg = self.cfg.events
-            PURGE_GAP = max(
-                _ev_cfg.athena_max_bars, _ev_cfg.ares_max_bars,
-                _ev_cfg.hermes_max_bars, _ev_cfg.artemis_max_bars,
-                _ev_cfg.chronos_max_bars, _ev_cfg.heph_max_bars,
-                _ev_cfg.nike_max_bars
-            )
+            PURGE_GAP = _ev_cfg.thor_max_bars
             split_idx_train_end = max(0, split_idx - PURGE_GAP)
             split_idx_val_start = split_idx
 
@@ -2130,9 +2005,6 @@ class DeepMLEngine:
             # ========================================
             # If CatBoost dictates a trade but Odin's long-term EWC memory 
             # detects highly probable structural extremes (>80%), Odin vetoes CatBoost.
-            if tft_proba is not None:
-                odin_bear_p = tft_proba[0]
-                odin_bull_p = tft_proba[1]
                 
                 if direction == 'BULLISH' and odin_bear_p > ODIN_VETO_THRESHOLD:
                     print(f"\n🚨 ODIN VETO: Overriding CatBoost 'BULLISH' prediction! Structural crash signature detected ({odin_bear_p*100:.1f}%). Setting BEARISH.")
@@ -2173,13 +2045,13 @@ class DeepMLEngine:
                 # LEGACY CONSUMER COMPATIBILITY
                 # ========================================
                 # Consumer uses legacy self.scaler and self.catboost_model
-                # Set them to use Athena (primary) specialist
-                if self.specialist_models['athena']['model'] is not None:
-                    self.scaler = self.specialist_models['athena']['scaler']
-                    self.calibrator = self.specialist_models['athena'].get('calibrator')
-                    athena_model = self.specialist_models['athena']['model']
-                    self.models = [(athena_model, 1, 1.0, {})]
-                    print("✅ Legacy consumer compatibility enabled (using Athena specialist)")
+                # V12: Use Thor as primary specialist
+                if 'thor' in self.specialist_models and self.specialist_models['thor']['model'] is not None:
+                    self.scaler = self.specialist_models['thor']['scaler']
+                    self.calibrator = self.specialist_models['thor'].get('calibrator')
+                    thor_model = self.specialist_models['thor']['model']
+                    self.models = [(thor_model, 1, 1.0, {})]
+                    print("✅ Legacy consumer compatibility enabled (using Thor specialist)")
                 
                 return
             
@@ -2254,23 +2126,7 @@ class DeepMLEngine:
                 print("💡 Or use /train command to train manually")
                 print("="*70 + "\n")
                 
-            # Load TFT (Odin) Model
-            if self.tft_model is not None:
-                tft_path = os.path.join(self.cfg.model_dir, 'tft_model.pth')
-                if os.path.exists(tft_path):
-                    try:
-                        import torch
-                        self.tft_model.load_state_dict(torch.load(tft_path, map_location=next(self.tft_model.parameters()).device))
-                        self.tft_model.eval()
-                        self.tft_trained = True
-                        print("✅ Loaded Odin (LSTM-Attention) model weights.")
-                    except Exception as e:
-                        print(f"⚠️  Failed to load Odin model weights: {e}")
-                        self.tft_trained = False
-                else:
-                    self.tft_trained = False
-                    print("⚠️  No Odin (LSTM-Attention) model weights found - will use fallback")
-                
+            # TFT Logic Fully Removed
         except Exception as e:
             print(f"❌ MODEL LOADING ERROR: {e}")
             import traceback
@@ -3361,7 +3217,7 @@ class DeepMLEngine:
         features.extend(delta_features)
         # Running total = 270
 
-        # ━━━━ IMPULSE FEATURES (5) — Nike Specialist Context (v11.5b) ━━━━
+        # ━━━━ IMPULSE FEATURES (5) — Thor Specialist Context ━━━━
         # Features that capture single-candle explosive move characteristics.
         # These are always computed (all agents can use them via domain mask).
         # Indices 270-274.
@@ -3997,7 +3853,7 @@ class DeepMLEngine:
             imbalance = (bid_vol_l5 - ask_vol_l5) / (bid_vol_l5 + ask_vol_l5) if (bid_vol_l5 + ask_vol_l5) > 0 else 0
             features.append(imbalance)
 
-            # Nike: track total depth history for depth_delta feature (index 274)
+            # Thor: track total depth history for depth_delta feature (index 274)
             self._ob_depth_history[symbol].append(float(bid_vol_l5 + ask_vol_l5))
             
             # 2. PRICE-WEIGHTED IMBALANCE
@@ -4260,9 +4116,9 @@ class DeepMLEngine:
                 _h_arr = np.array([float(k[2]) for k in candles], dtype=np.float64)
                 _l_arr = np.array([float(k[3]) for k in candles], dtype=np.float64)
                 _a_arr = Indicators.atr_series(_h_arr, _l_arr, _c_arr)
-                _tb_tp = self.cfg.events.athena_tp_atr
-                _tb_sl = self.cfg.events.athena_sl_atr
-                _tb_mb = self.cfg.events.athena_max_bars
+                _tb_tp = self.cfg.events.thor_tp_atr
+                _tb_sl = self.cfg.events.thor_sl_atr
+                _tb_mb = self.cfg.events.thor_max_bars
 
                 for end_pos in range(50 + sequence_length, len(candles) - _tb_mb, stride):
                     # Build sequence: extract features at each step in the window
@@ -4279,10 +4135,9 @@ class DeepMLEngine:
                     if not valid or len(seq_features) != sequence_length:
                         continue
 
-                    # Target: Triple Barrier label (aligned with CatBoost agents)
-                    # Uses Athena's (generalist) barrier settings so TFT and CatBoost
-                    # optimize the same objective. Previous 0.1% threshold created
-                    # conflicting signals in the ensemble.
+                    # Target: Triple Barrier label (aligned with Thor specialist)
+                    # Uses Thor's settings so Meta-features and CatBoost
+                    # optimize the same objective.
                     label_long, _ = fast_triple_barrier_label(
                         _c_arr, _h_arr, _l_arr, _a_arr, end_pos,
                         1, _tb_tp, _tb_sl, _tb_mb
@@ -4325,13 +4180,13 @@ class DeepMLEngine:
         🧬 EVENT-BASED MoE TRAINING (Memory-Safe Per-Coin Processing)
         
         Each agent only trains on its specific market events:
-        - Athena: Strong uptrend continuation (CUSUM + new high)
+        - Thor: Strong impulse continuation (CUSUM-gated breakout)
         - Ares: Downtrend continuation / short (CUSUM + new low)
         - Hermes: Range-bound scalps (squeeze + expansion)
         - Artemis: Stealth volume accumulation (CUSUM + volume, NOT at new high)
         - Chronos: RSI extreme reversal (CUSUM + RSI extreme)
         - Hephaestus: Support/Resistance bounce (price at S/R level)
-        - Nike: Impulse continuation (single-candle explosion + volume)
+        - Thor: Impulse continuation (single-candle explosion + volume)
         
         Key safety features:
         - Per-coin processing: fetch → detect → extract features → release memory
@@ -4390,14 +4245,15 @@ class DeepMLEngine:
 
             # ========================================
             # STEP 1b: PREFETCH HISTORICAL FUTURES DATA (v11 backfill)
-            # Eliminates NaN in Futures X-Ray features during training by loading
-            # historical funding rate + OI + LS ratio from Binance APIs.
-            # ========================================
-            try:
-                proxy_url = getattr(self.cfg, 'PROXY_URL', None) or getattr(self.bnc, 'proxy', None)
-                self.prefetch_historical_futures(symbols, proxy=proxy_url)
-            except Exception as _pf_err:
-                print(f"⚠️  Historical futures prefetch skipped: {_pf_err}")
+            # Skip when bnc=None (offline/standalone training mode)
+            if self.bnc is not None:
+                try:
+                    proxy_url = getattr(self.cfg, 'PROXY_URL', None) or getattr(self.bnc, 'proxy', None)
+                    self.prefetch_historical_futures(symbols, proxy=proxy_url)
+                except Exception as _pf_err:
+                    print(f"⚠️  Historical futures prefetch skipped: {_pf_err}")
+            else:
+                print(f"📚 Historical futures prefetch skipped (offline mode)")
 
             # ========================================
             # STEP 2: PER-COIN EVENT EXTRACTION + FEATURE EXTRACTION
@@ -4473,11 +4329,21 @@ class DeepMLEngine:
                         all_klines = {}
                         all_events = {}
                         for i, symbol in enumerate(symbols):
-                            print(f"   [{i+1}/{len(symbols)}] Fetching {symbol}...", end=" ", flush=True)
-                            if hasattr(self, 'bnc') and self.bnc is not None:
+                            print(f"   [{i+1}/{len(symbols)}] Loading {symbol}...", end=" ", flush=True)
+                            # V12: Load from feather cache — no live API calls during training
+                            from pathlib import Path
+                            _cache_dir = Path(__file__).resolve().parent / "feather_cache"
+                            _feather_path = _cache_dir / f"{symbol}_5m.feather"
+                            if _feather_path.exists():
+                                import pandas as pd
+                                _df = pd.read_feather(_feather_path)
+                                # Convert to klines format [12 cols matching Binance API]
+                                klines = _df[['open_time','open','high','low','close','volume','close_time','quote_volume','trades','taker_buy_base','taker_buy_quote','ignore']].values.tolist()
+                            elif hasattr(self, 'bnc') and self.bnc is not None:
                                 klines = self.bnc.get_historical_klines(symbol, '5m', days=TRAIN_DAYS, training_mode=True)
                             else:
-                                klines = selector.get_historical_klines_paginated(symbol, '5m', days=TRAIN_DAYS)
+                                print(f"⚠️ No feather cache for {symbol}, skip")
+                                continue
                             if not klines or len(klines) < 500:
                                 print(f"⚠️ {len(klines) if klines else 0} candles, skip")
                                 continue
@@ -4490,6 +4356,7 @@ class DeepMLEngine:
                             all_klines[symbol] = klines_np
                             all_events[symbol] = (events, cutoff, len(klines))
                             print(f"✅ {len(klines):,} candles")
+
                         
                         # Batch GPU computation
                         if all_klines:
@@ -4562,10 +4429,20 @@ class DeepMLEngine:
                         coin_idx, symbol = args
                         try:
                             # Fetch klines
-                            if hasattr(self, 'bnc') and self.bnc is not None:
+                            # V12: Load from feather cache in CPU path — no live API calls during training
+                            from pathlib import Path
+                            _cache_dir_cpu = Path(__file__).resolve().parent / "feather_cache"
+                            _feather_path_cpu = _cache_dir_cpu / f"{symbol}_5m.feather"
+                            if _feather_path_cpu.exists():
+                                import pandas as pd
+                                _df = pd.read_feather(_feather_path_cpu)
+                                klines = _df[['open_time','open','high','low','close','volume','close_time','quote_volume','trades','taker_buy_base','taker_buy_quote','ignore']].values.tolist()
+                            elif hasattr(self, 'bnc') and self.bnc is not None:
                                 klines = self.bnc.get_historical_klines(symbol, '5m', days=TRAIN_DAYS, training_mode=True)
                             else:
-                                klines = selector.get_historical_klines_paginated(symbol, '5m', days=TRAIN_DAYS)
+                                with print_lock:
+                                    print(f"   [{coin_idx+1}/{len(symbols)}] ⚠️ No feather cache for {symbol}, skip")
+                                return None
                             
                             if not klines or len(klines) < 500:
                                 with print_lock:
@@ -4779,145 +4656,11 @@ class DeepMLEngine:
                     del extreme_idx
             except Exception as e:
                 print(f"⚠️ Failed to build Replay Buffer: {e}")
-                
-            # ========================================
-            # STEP 3.5: TRAIN ODIN (Meta-Learner) ON ALL EVENTS
-            # ========================================
-            if self.tft_model is not None:
-                print("\n" + "="*70)
-                print("🧠 TRAINING ODIN (Meta-Feature Extractor)")
-                print("="*70)
-                # ⚡ RAM FIX: build concatenated view directly from pre-alloc slices
-                X_parts, y_parts, w_parts = [], [], []
-                for name in agent_names:
-                    n = agent_features[name]['count']
-                    if n > 0:
-                        X_parts.append(agent_features[name]['X'][:n])
-                        y_parts.append(agent_features[name]['y'][:n])
-                        w_parts.append(agent_features[name]['w'][:n])
-                all_X_np = np.concatenate(X_parts, axis=0) if X_parts else None
-                all_y_np = np.concatenate(y_parts) if y_parts else None
-                all_w_np = np.concatenate(w_parts) if w_parts else None
-                del X_parts, y_parts, w_parts
-
-                if all_X_np is not None:
-                    total_odin = len(all_w_np)
-                    if total_odin > 100000:
-                        print(f"   ⚖️  Sampling 100,000 HIGHEST QUALITY events from {total_odin:,} total to prevent OOM in TensorDataset...")
-                        # ⚡ RAM FIX: zero-copy numpy index instead of list comprehension
-                        highest_quality_idx = np.argsort(all_w_np)[-100000:]
-                        all_X_np = all_X_np[highest_quality_idx]
-                        all_y_np = all_y_np[highest_quality_idx]
-                        del highest_quality_idx
-                
-                if all_X_np is not None and len(all_X_np) > 100:
-                    try:
-                        # Move model to GPU FIRST before creating optimizer
-                        self.tft_model.train()
-                        if USE_GPU and torch.cuda.is_available():
-                            self.tft_model = self.tft_model.cuda()
-
-                        X_tft = torch.from_numpy(all_X_np).unsqueeze(1)  # zero-copy
-                        y_tft = torch.from_numpy(all_y_np.astype(np.int64))
-                        
-                        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                        # EXPERIENCE REPLAY INJECTION (25% OVERSAMPLING)
-                        # Combats Catastrophic Forgetting in the LSTM by forcing 
-                        # crash/pump events to constitute 25% of training data
-                        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                        buffer_file = os.path.join(self.cfg.model_dir, 'rare_events_buffer.npz')
-                        has_replay = False
-                        if os.path.exists(buffer_file):
-                            try:
-                                replay_data = np.load(buffer_file)
-                                X_rep = replay_data['X']
-                                y_rep = replay_data['y']
-                                
-                                if len(X_rep) > 50:
-                                    # Calculate exactly how many we need to make them 25% of total
-                                    # (N_normal) / 0.75 * 0.25 = N_replay_needed
-                                    n_normal = len(X_tft)
-                                    n_replay_needed = int((n_normal / 0.75) * 0.25)
-                                    
-                                    # We have a limited buffer (e.g. 500), so we oversample it (repeat) 
-                                    # until it equals the target proportion
-                                    repeats = int(np.ceil(n_replay_needed / len(X_rep)))
-                                    X_rep_over = np.tile(X_rep, (repeats, 1))[:n_replay_needed]
-                                    y_rep_over = np.tile(y_rep, repeats)[:n_replay_needed]
-                                    
-                                    # Merge into PyTorch tensors
-                                    X_ext = torch.from_numpy(X_rep_over).unsqueeze(1)
-                                    y_ext = torch.from_numpy(y_rep_over.astype(np.int64))
-                                    
-                                    X_tft = torch.cat([X_tft, X_ext], dim=0)
-                                    y_tft = torch.cat([y_tft, y_ext], dim=0)
-                                    has_replay = True
-                                    print(f"   💾 Injected {n_replay_needed:,} rare event replays (25% buffer scale)")
-                            except Exception as e:
-                                print(f"   ⚠️ Replay Injection fail: {e}")
-                        
-                        del all_X_np, all_y_np, all_w_np
-                        if USE_GPU and torch.cuda.is_available():
-                            X_tft = X_tft.cuda()
-                            y_tft = y_tft.cuda()
-                        # Temporal val split for TFT quality gate (last 15%)
-                        n_tft = len(X_tft)
-                        tft_split = int(n_tft * 0.85)
-                        X_tft_val = X_tft[tft_split:]
-                        y_tft_val = y_tft[tft_split:]
-                        X_tft_train = X_tft[:tft_split]
-                        y_tft_train = y_tft[:tft_split]
-
-                        dataset = torch.utils.data.TensorDataset(X_tft_train, y_tft_train)
-                        loader = torch.utils.data.DataLoader(dataset, batch_size=256, shuffle=True)
-
-                        # Optimizer created AFTER model is on GPU so params match device
-                        optimizer = optim.Adam(self.tft_model.parameters(), lr=1e-3)
-                        criterion = nn.CrossEntropyLoss()
-
-                        for epoch in range(10):
-                            for X_batch, y_batch in loader:
-                                optimizer.zero_grad()
-                                outputs = self.tft_model(X_batch)
-                                loss = criterion(outputs, y_batch)
-                                loss.backward()
-                                optimizer.step()
-
-                        # TFT quality gate: compute val AUC before enabling feature 223 injection
-                        tft_val_auc = 0.5
-                        try:
-                            self.tft_model.eval()
-                            with torch.no_grad():
-                                val_probs = torch.softmax(self.tft_model(X_tft_val), dim=1)[:, 1].cpu().numpy()
-                            val_true = y_tft_val.cpu().numpy()
-                            if len(np.unique(val_true)) == 2:
-                                from sklearn.metrics import roc_auc_score
-                                tft_val_auc = float(roc_auc_score(val_true, val_probs))
-                        except Exception:
-                            tft_val_auc = 0.5
-                        self.tft_val_auc = tft_val_auc
-                        print(f"   🧠 Odin val AUC: {tft_val_auc:.4f} {'✅ enabled' if tft_val_auc > 0.55 else '⚠️ below threshold — feature 223 stays zeroed'}")
-
-                        self.tft_trained = tft_val_auc > 0.55  # Only inject if genuinely useful
-                        torch.save(self.tft_model.state_dict(), os.path.join(self.cfg.model_dir, 'tft_model.pth'))
-                        
-                        # Initialize EWC for Long-Term Memory
-                        from quanta_deeplearning import EWC
-                        self.ewc = EWC(self.tft_model, loader)
-                        
-                        print("   ✅ Trained & Saved Odin Meta-Learner + Initialized EWC")
-                    except Exception as e:
-                        print(f"   ❌ Odin Training failed: {e}")
-                
-                # OOM FIX: Force PyTorch to release its held VRAM back to the OS so CatBoost can use the GPU
-                if USE_GPU and torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
             # ========================================
             # STEP 4: TRAIN EACH SPECIALIST
             # ========================================
             print("\n" + "="*70)
-            print("🧬 TRAINING 7-AGENT GREEK PANTHEON")
+            print("🧬 TRAINING THOR V12 SPECIALIST")
             print("="*70)
             
             specialist_success = False
@@ -4934,75 +4677,7 @@ class DeepMLEngine:
                 # ⚡ Already numpy float32 — slice, no copy
                 X_arr = data['X'][:n_events].copy()  # .copy() so we can overwrite col 223 safely
                 y_arr = data['y'][:n_events].astype(np.int32)  # CatBoost wants int32
-                w_arr = data['w'][:n_events]
-
-                # ═══════════════════════════════════════════════════════
-                # CROSS-EVENT NEGATIVE SAMPLING (v11.5)
-                # Inject 5% events from OTHER agents as class-0 (negative) examples.
-                # Forces each agent to learn what its domain is NOT, reducing false positives.
-                # Kuncheva (2004): cross-training improves ensemble disagreement quality.
-                # Ratio reduced from 15% → 5%: at 15%, cross-domain events are trivially
-                # distinguishable (different CUSUM triggers, different feature distributions),
-                # causing the model to learn domain boundaries rather than true signal.
-                # ═══════════════════════════════════════════════════════
-                CROSS_SAMPLE_RATIO = 0.05
-                try:
-                    other_agents = [a for a in agent_names if a != specialist_name]
-                    cross_X_parts = []
-                    cross_w_parts = []
-                    n_cross_target = int(n_events * CROSS_SAMPLE_RATIO)
-                    if not other_agents:
-                        raise ValueError("No other agents available for cross-event sampling")
-                    n_per_other = max(1, n_cross_target // len(other_agents))
-
-                    for other_name in other_agents:
-                        other_data = agent_features[other_name]
-                        other_count = other_data['count']
-                        if other_count < 10:
-                            continue
-                        # Sample random events from other agent's pool
-                        rng = np.random.RandomState(hash(specialist_name + other_name) % (2**31))
-                        sample_n = min(n_per_other, other_count)
-                        sample_idx = rng.choice(other_count, size=sample_n, replace=False)
-                        cross_X_parts.append(other_data['X'][sample_idx])
-                        cross_w_parts.append(other_data['w'][sample_idx] * 0.5)  # Lower weight for cross-domain
-
-                    if cross_X_parts:
-                        cross_X = np.concatenate(cross_X_parts)
-                        cross_y = np.zeros(len(cross_X), dtype=np.int32)  # All class 0 (negative)
-                        cross_w = np.concatenate(cross_w_parts)
-                        X_arr = np.concatenate([X_arr, cross_X])
-                        y_arr = np.concatenate([y_arr, cross_y])
-                        w_arr = np.concatenate([w_arr, cross_w])
-                        print(f"      🔀 Cross-event negatives: +{len(cross_X)} samples from {len(cross_X_parts)} other agents")
-                except Exception as e:
-                    print(f"      ⚠️ Cross-event sampling failed: {e}")
-
-                # EXTRACT ODIN META-FEATURE AND REPLACE FEATURE 223 (PADDED NULL)
-                if getattr(self, 'tft_trained', False) and self.tft_model is not None:
-                    try:
-                        self.tft_model.eval()
-                        with torch.no_grad():
-                            # OOM FIX: Process in batches so PyTorch doesn't try to allocate 1GB VRAM for 150,000 samples
-                            tft_out_list = []
-                            for i in range(0, len(X_arr), 4096):
-                                batch_X = X_arr[i:i+4096]
-                                tft_in = torch.tensor(batch_X, dtype=torch.float32).unsqueeze(1)
-                                if USE_GPU and torch.cuda.is_available(): tft_in = tft_in.cuda()
-                                batch_out = torch.softmax(self.tft_model(tft_in), dim=1)[:, 1].cpu().numpy()
-                                tft_out_list.append(batch_out)
-                                del tft_in, batch_out
-                            tft_out = np.concatenate(tft_out_list)
-                            
-                        # Override the padded neutral feature at index 223
-                        X_arr[:, 223] = tft_out
-                        
-                        # OOM FIX: Clear cache again after extracting features so CatBoost gets max VRAM
-                        if USE_GPU and torch.cuda.is_available():
-                            torch.cuda.empty_cache()
-                    except Exception as e:
-                        pass
-                
+                w_arr = data['w'][:n_events]                
                 bulls = sum(y_arr == 1)
                 bears = sum(y_arr == 0)
                 print(f"\n   🎯 {specialist_name.upper()}: {len(X_arr)} samples ({bulls} bull / {bears} bear)")
@@ -5053,15 +4728,16 @@ class DeepMLEngine:
                 # LEGACY CONSUMER COMPATIBILITY
                 # ========================================
                 # Consumer uses legacy self.scaler and self.catboost_model
-                # Set them to use Athena (primary) specialist
-                self.scaler = self.specialist_models['athena']['scaler']
-                athena_model = self.specialist_models['athena']['model']
-                if athena_model:
-                    self.models = [(athena_model, 1, 1.0, {})]
-                print("✅ Legacy consumer compatibility enabled (using Athena specialist)")
+                # V12: Use Thor as primary specialist for legacy consumer compat
+                if 'thor' in self.specialist_models and self.specialist_models['thor']['model'] is not None:
+                    self.scaler = self.specialist_models['thor']['scaler']
+                    thor_model = self.specialist_models['thor']['model']
+                    if thor_model:
+                        self.models = [(thor_model, 1, 1.0, {})]
+                    print("✅ Legacy consumer compatibility enabled (using Thor specialist)")
                 
                 print("\n" + "="*70)
-                print("✅ 15-AGENT PANTHEON TRAINING COMPLETE")
+                print("✅ THOR V12 TRAINING COMPLETE")
                 print("="*70)
                 for name, spec in self.specialist_models.items():
                     print(f"🧬 {name:10s}: Gen {spec['generation']} (Weight {spec['weight']:.3f})")

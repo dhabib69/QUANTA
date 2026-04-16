@@ -812,26 +812,9 @@ class QuantaSelector:
 
         result = {}
         
-        pos, lab, wt = qne.fast_extract_athena(closes, highs, lows, atrs, atr_pct, df['CUSUM_pos'].values.copy(), orig_idx)
-        result['athena'] = to_arrays(pos, lab, wt)
-        
-        pos, lab, wt = qne.fast_extract_ares(closes, highs, lows, atrs, atr_pct, df['CUSUM_neg'].values.copy(), orig_idx)
-        result['ares'] = to_arrays(pos, lab, wt)
-        
-        pos, lab, wt = qne.fast_extract_hermes(closes, highs, lows, atrs, atr_pct, orig_idx)
-        result['hermes'] = to_arrays(pos, lab, wt)
-        
-        pos, lab, wt = qne.fast_extract_artemis(closes, highs, lows, atrs, atr_pct, df['CUSUM_pos'].values.copy(), df['CUSUM_neg'].values.copy(), volumes, vol_avg, orig_idx)
-        result['artemis'] = to_arrays(pos, lab, wt)
-        
-        pos, lab, wt = qne.fast_extract_chronos(closes, highs, lows, atrs, atr_pct, df['CUSUM_pos'].values.copy(), df['CUSUM_neg'].values.copy(), orig_idx)
-        result['chronos'] = to_arrays(pos, lab, wt)
-        
-        pos, lab, wt = qne.fast_extract_hephaestus(closes, highs, lows, atrs, atr_pct, orig_idx)
-        result['hephaestus'] = to_arrays(pos, lab, wt)
-        
-        pos, lab, wt = qne.fast_extract_nike(closes, highs, lows, atrs, atr_pct, volumes, vol_avg20, orig_idx)
-        result['nike'] = to_arrays(pos, lab, wt)
+        opens = df['open'].values
+        pos, lab, wt = qne.fast_extract_nike(closes, highs, lows, opens, atrs, volumes, vol_avg20, orig_idx)
+        result['thor'] = to_arrays(pos, lab, wt)
         
         return result
 

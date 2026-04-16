@@ -537,3 +537,82 @@ Read this file before making any changes to training logic, feature extraction, 
 - Loss rows get a heuristic `what_went_wrong`; big-win rows get a heuristic `what_went_right`.
 - Big wins are currently defined as positive-net-PnL trades at or above the 80th percentile of positive trade `net_pnl`.
 - Feature comparison output focuses on medians/means for numeric trade + pump-path fields between losses and big wins.
+
+## Norse Thor V12 Specialist Pivot (2026-04-14)
+- Decision: Collapse the 7-agent Greek Pantheon ensemble into a single high-conviction specialist (Thor).
+- Rationale: The ensemble approach introduced excessive complexity (Shannon entropy vetoes, cross-agent calibration jitter) which diluted performance in fast-moving crypto markets. A single specialist focusing on impulse continuation (Nike/Thor) delivers higher alpha with lower latency.
+- Feature Space: Reduced from 278 features (including ensemble meta-features) to a specific 102-feature mask (`domain_impulse`) focused on microstructure and short-term momentum.
+- Offline-First: All training redirected to use local `feather_cache` to bypass Binance API rate limits and ensure perfect backtest reproducibility.
+- Legacy Compat: Maintained `self.models` and `self.scaler` bindings in `DeepMLEngine` to support existing consumer code without full refactors.
+
+## WalkForward Sim Design Decisions (2026-04-15)
+- **Loop order**: bar-outer / symbol-inner is the ONLY correct structure. Symbol-outer/bar-inner makes `_MAX_CONC` meaningless and breaks concurrent position management.
+- **Train window**: hardcoded 60d in sim (`_TRAIN_DAYS = 60`). Config has 180d but that yields only 6 windows from 365d data. 60d → 10 windows (300 OOS days). Never read `_BT.train_window_days` for this.
+- **CatBoost inference path**: `_REPLAY_ENG._fast_extract_at_position(precomputed, abs_bar, klines_np)` → 278-dim vector → `_IMPULSE_MASK` (102 features) → `predict_proba`. Returns `(score, feat_vec)` tuple so caller can check `feat_vec[272]` (pre_impulse_r2) without double-compute.
+- **Wave strength source**: klines col[9] = `taker_buy_base` (real Binance taker flow from feather cache). Formula: `net = (2×taker_buy/total_vol - 1)`, `score = (net+1)/2 × 100`. Falls back to directional-vol proxy if col[9] absent.
+- **Continuous risk scaling**: score=68 → 0.5% risk, score=100 → 3.0%, linear. The old binary `activation_score=85` threshold fired on <4% of CatBoost-scored trades (scores cluster 68–85, max observed ~88.6).
+- **Per-trade equity curve**: appended in `SimPositionManager._close()`. Window-level snapshots always showed 0% MaxDD. Per-trade is required.
+- **pre_impulse_r2 veto index**: feature index [272] in 278-dim vector. Skip trade if > 0.70.
+- **Hour-of-day filter**: extracted from `klines_np[abs_bar, 0]` (open_time ms). `utc_hour = int((ts_ms / 3_600_000) % 24)`. Skip hours in `_SKIP_UTC_HOURS = {0, 7, 10, 11, 12}`.
+
+## MAE-Calibrated Thor Exit Parameters (2026-04-15)
+Source: `NORSE_MAE_STATS_REPORT.md` (19,563 pump rows, 1.4M drawdown-curve rows, 384 decision-matrix combos)
+- `SL_ATR = 3.00` — P90 winner MAE. At SL=2.4: only 49.5% of 1-3 ATR outcome trades survive. At 3.0: 63.2%. Tighter stops kill eventual winners.
+- `BANK_ATR = 4.20`, `BANK_FRAC = 0.35` — top decision-matrix combo `(sl=3.0, bank=4.2, frac=0.35, activate=1.5, trail=2.0)`.
+- `TRAIL_ATR = 2.00` — tighter runner trail. Old 6.0 ATR was giving back too much.
+- `TRAIL_ACTIVATE_ATR = 1.50` — trail only activates 1.5 ATR above bank price. Below that SL stays at breakeven. Prevents whipsaw exits on volatile runners.
+- `MAX_PRE = 48` bars (4h), `MAX_POST = 96` bars (8h). Old 144/1152 = 12h/4d was far too long.
+- `MAE_VETO_ATR = 3.62`, `MAE_VETO_BARS = 5` — exit if trade goes 3.62 ATR adverse in first 5 bars. P50 winner MAE from entry = 4.29 ATR overall, recommendation = 3.62.
+- **Bad hours** (UTC, PF < 0.85): 0 (0.68), 7 (0.81), 10 (0.75), 11 (0.81), 12 (0.51). **Good hours**: 2 (1.15), 8 (1.16), 14 (1.18), 13 (1.06), 6 (1.01).
+- **Bad days** (UTC): Monday=0 (PF 0.81), Tuesday=1 (0.89). **Good days**: Sunday=6 (1.11), Wednesday=2 (1.07), Friday=4 (1.05).
+- Baldur exit efficacy: current exit expectancy 0.47 ATR vs Baldur-triggered 0.83 ATR. Baldur fires median 15 bars BEFORE peak.
+
+## 3-Layer Pyramid Strategy (2026-04-15)
+Calibrated from MAE pump stats: overall `max_runup_p50 = 3.80 ATR`, `max_mae_entry_p50 = 4.29 ATR`.
+Constants: `_PYR_TRIGGER_ATR=0.5`, `_PYR_ADD_SL_ATR=0.5`, `_PYR_ADD_FRAC=0.50`, `_PYR_RECOVERY_ATR=3.77`
+- **L1**: normal Thor entry at P. SL=P-3.0×ATR, bank=P+4.2×ATR.
+- **L2** (add): when `high ≥ P + 0.5×ATR`, open add (50% L1 size). Add SL = `P + 0.5×ATR - 0.5×ATR = P` (breakeven for the add). Only triggered pre-bank.
+- **L3** (recovery): if L2 SL hits, open recovery at that fill price (50% L1 size). SL = P - 3.0×ATR. Target = P + 3.77×ATR (median pump runup from MAE stats). L3 closes at target independently of main position.
+- Bank event: if main banks while L2 add is open, L2 also partially banks (BANK_FRAC=35%).
+- All active layers force-close at main position exit price.
+- `SimTrade` fields: `add1_pnl`, `add2_pnl`, `layers` (1/2/3).
+
+## Norse vs WalkForward Gap Analysis (2026-04-15)
+- Norse: $10k→$1.917M (+19,078%), 365 days, 728 trades, 50.6% WR, PF 2.37, MaxDD 43.7%
+- WF best result to date: $10k→$215k (+2,054%), 270 OOS days (9 windows), 479 trades, 57.6% WR, PF 3.51
+- Extrapolated WF to 365 days ≈ $730k. Residual gap ≈ 2.6×.
+- Gap causes: (1) 270 vs 365 OOS days, (2) wave_strength proxy vs real aggTrades taker flow, (3) Norse Optuna params are in-sample tuned (mild overfit), (4) late-window compounding with large equity hasn't fully materialized yet in 10-window structure.
+
+## Khairul's Identity — Master Equation Reference (2026-04-15)
+
+### The Identity
+C(T) = C₀ · e^(n·T)
+
+n = λ · g̃   where   g̃ = P·ln(1 + f·b) + (1-P)·ln(1 - f)
+
+### Calibrated Constants (from 194× WF sim, 300 OOS days)
+- n_daily = 0.01764 day⁻¹
+- g̃ = 0.01131 per trade (measured) | 0.01452 (Kelly formula at avg f) — gap = score dist skew + pyramid non-linearity
+- λ = 1.56 trades/day (468 trades / 300 days)
+- P = 0.707 | b = 1.810 | f_avg ≈ 0.015 | Π = 1.696
+- f* = 0.545 (full Kelly) | f/f* = 2.75% of Kelly
+
+### Five Consistency Constraints
+1. Kelly: f/f*=0.0275 → n=0.01764 (conservative operating point, full-Kelly n≈0.089)
+2. Pump Phase: n_QUANTA=0.01764 < n_pump=0.082 → harvesting fraction of pump ✓
+3. Grinold: n_max=IC²·λ·b·(1-ρ)=0.0366 → QUANTA at 48% of info-theoretic ceiling
+4. MAE Geometry: b=1.810 → average runner exits at 6.09 ATR (self-consistent with exit params)
+5. Pyramid: Π=1.696 → L3 weight=27.9% explainable by MAE recovery law (3.77 ATR p50)
+
+### Derived Quantities
+- b = PF × (1-P)/P = 4.37 × 0.293/0.707 = 1.810
+- f* = (P·b - (1-P)) / b = 0.987 / 1.810 = 0.5453
+- IC ≈ 2×(AUC-0.5) = 0.616 | Grinold IR = IC×√BR = 12.2 (annual) | actual Sharpe = 7.15
+- Cross-coin ρ_eff = (7.15/12.2)² = 0.343 → 65.7% alpha erased by altcoin co-movement
+- Average runner exit: (b×SL_ATR - BANK_FRAC×BANK_ATR) / (1-BANK_FRAC) = 6.09 ATR
+- Pump phase time-to-bank: ln(1+4.20×ATR%) / 0.082 ≈ 21h at ATR=1.8%
+- n_monthly = 0.01764 × 30 = 0.529 | e^0.529 = 1.697 (+69.7%/month)
+- Capital doubles every: ln(2)/0.01764 = 39.3 days
+
+### Named After
+Habib Khairul — builder of QUANTA. Derived from original 194× OOS walk-forward simulation, April 2026.

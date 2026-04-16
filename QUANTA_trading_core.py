@@ -367,10 +367,10 @@ class PaperTrading:
                 writer.writerow(['symbol', 'entry_price', 'exit_price', 'direction', 'pnl', 'time'])
 
     def open_position(self, symbol, entry_price, direction, confidence, atr_percent,
-                      ppo_size_mult=1.0, barrier_rr=2.0, bs_edge=None, bs_prob=None,
+                      ppo_size_mult=1.0, barrier_rr=2.0, bs_edge=None, bs_prob=None, thor_score=None,
                       specialist=None, display_agent=None, source_regime_agent=None,
                       thor_context_active=False, baldur_top_warning=False,
-                      freya_context_valid=False, exit_profile=None, timeout_bars=None):
+                      freya_context_valid=False, exit_profile=None, timeout_bars=None, **kwargs):
         """
         Open a paper position.
 
@@ -418,10 +418,11 @@ class PaperTrading:
         # maximum of equity (e.g. 3%) while letting the wide TP capture ~10%.
         from quanta_config import Config as _qcfg
         _ev = getattr(_qcfg, 'events', None)
-        _compound_mode   = str(getattr(_ev, 'compound_mode', 'asymmetric_target'))
-        _max_loss_pct    = float(getattr(_ev, 'compound_max_loss_pct', 3.0))
-        _activation_score = float(getattr(_ev, 'compound_activation_score', 85.0))
-        _score = float(confidence)
+        _compound_mode   = str(getattr(_ev, 'thor_compound_mode', 'asymmetric_target'))
+        _max_loss_pct    = float(getattr(_ev, 'thor_compound_max_loss_pct', 3.0))
+        _activation_score = float(getattr(_ev, 'thor_compound_activation_score', 85.0))
+        # Use explicit thor_score if provided (opportunity_score from ML); fall back to raw confidence
+        _score = float(thor_score) if thor_score is not None else float(confidence)
 
         stop_distance = atr_percent * 1.5
 
@@ -454,11 +455,6 @@ class PaperTrading:
         # Base notional ready
         total_notional = target_notional
         size_units = total_notional / max(1e-8, entry_price)
-
-        # Apply PPO oracle multiplier (fine-tuning)
-        ppo_size_mult = float(max(0.25, min(2.0, ppo_size_mult)))
-        total_notional *= ppo_size_mult
-        size_units     *= ppo_size_mult
 
         # Apply loss throttle from risk manager
         _loss_throttle = getattr(self.risk_manager, 'get_size_multiplier', lambda: 1.0)()
@@ -501,7 +497,9 @@ class PaperTrading:
         self._save_state()
 
     def _execute_market_order(self, symbol, side, chunk_notional, step_price, confidence=0, atr_percent=0,
-                              specialist=None, exit_profile=None, timeout_bars=None):
+                              specialist=None, exit_profile=None, timeout_bars=None,
+                              display_agent=None, source_regime_agent=None,
+                              thor_context_active=False, baldur_top_warning=False, freya_context_valid=False):
         """Simulate execution of a market order chunk with realistic cost model."""
         from quanta_config import Config as _cfg
         _bt = getattr(_cfg, 'backtest', None)
@@ -549,14 +547,14 @@ class PaperTrading:
             atr_move = fill_price * (atr_percent / 100.0)
             specialist_key = str(specialist or "").lower()
             exit_profile = exit_profile or {}
-            is_nike_v2 = (
-                specialist_key == 'nike' and
+            is_thor_v2 = (
+                specialist_key == 'thor' and
                 isinstance(exit_profile, dict) and
-                exit_profile.get('mode') == 'nike_v2' and
+                exit_profile.get('mode') == 'thor_v2' and
                 side == 'BULLISH'
             )
 
-            if is_nike_v2:
+            if is_thor_v2:
                 bank_atr = float(exit_profile.get('bank_atr', 2.0))
                 sl_atr = float(exit_profile.get('sl_atr', 0.8))
                 bank_fraction = float(exit_profile.get('bank_fraction', 0.5))
@@ -604,11 +602,11 @@ class PaperTrading:
                 'tp1_price': _tp1, 'tp2_price': _tp2, 'tp3_price': _tp3, 'sl_price': _sl,
                 # Partial close state (v11.6)
                 'tp1_hit': False, 'tp2_hit': False, 'tp3_hit': False,
-                'nike_bank_hit': False,
-                'nike_bank_fraction': bank_fraction,
-                'nike_bank_price': _tp1,
-                'nike_runner_trail_atr': runner_trail_atr,
-                'nike_runner_peak': fill_price,
+                'thor_bank_hit': False,
+                'thor_bank_fraction': bank_fraction,
+                'thor_bank_price': _tp1,
+                'thor_runner_trail_atr': runner_trail_atr,
+                'thor_runner_peak': fill_price,
                 'max_bars_pre_bank': max_pre,
                 'max_bars_post_bank': max_post,
                 'original_size': size,  # for win/loss labeling after partial closes
@@ -651,9 +649,9 @@ class PaperTrading:
             is_final_close = not partial
             if is_final_close:
                 self.total_trades += 1
-                tp1_was_hit = pos.get('tp1_hit', False) or pos.get('nike_bank_hit', False)
+                tp1_was_hit = pos.get('tp1_hit', False) or pos.get('thor_bank_hit', False)
                 # Win if: pnl > 0, OR SL fired but TP1 already banked, OR chandelier SL (TP1+2+3 all banked)
-                if pnl > 0 or (barrier_hit in ('SL', 'SL_AUTO', 'TIMEOUT', 'NIKE_RUNNER_TIMEOUT') and tp1_was_hit) or barrier_hit == 'CHANDELIER_SL':
+                if pnl > 0 or (barrier_hit in ('SL', 'SL_AUTO', 'TIMEOUT', 'THOR_RUNNER_TIMEOUT') and tp1_was_hit) or barrier_hit == 'CHANDELIER_SL':
                     self.total_wins += 1
                 else:
                     self.total_losses += 1
@@ -665,8 +663,8 @@ class PaperTrading:
             # v11.4: Notify risk manager + paper logger (only on final close)
             if is_final_close:
                 # For RL/risk: treat SL-after-TP1 and CHANDELIER_SL as positive outcome
-                banked_win = pos.get('tp1_hit', False) or pos.get('nike_bank_hit', False)
-                reported_pnl = abs(pnl) if (barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL', 'TIMEOUT', 'NIKE_RUNNER_TIMEOUT') and banked_win) else pnl
+                banked_win = pos.get('tp1_hit', False) or pos.get('thor_bank_hit', False)
+                reported_pnl = abs(pnl) if (barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL', 'TIMEOUT', 'THOR_RUNNER_TIMEOUT') and banked_win) else pnl
                 self.risk_manager.on_trade_closed(symbol, reported_pnl, self.balance)
             self.paper_logger.log_trade_closed(
                 symbol=symbol, direction=pos['direction'],
@@ -679,8 +677,8 @@ class PaperTrading:
 
             # v11.5: Update per-agent Brier score calibration (final close only)
             if is_final_close and pos.get('specialist_probs') is not None and hasattr(self, '_ml_engine') and self._ml_engine:
-                tp1_was_hit = pos.get('tp1_hit', False) or pos.get('nike_bank_hit', False)
-                outcome = 1 if (pnl > 0 or (barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL', 'TIMEOUT', 'NIKE_RUNNER_TIMEOUT') and tp1_was_hit) or barrier_hit == 'CHANDELIER_SL') else 0
+                tp1_was_hit = pos.get('tp1_hit', False) or pos.get('thor_bank_hit', False)
+                outcome = 1 if (pnl > 0 or (barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL', 'TIMEOUT', 'THOR_RUNNER_TIMEOUT') and tp1_was_hit) or barrier_hit == 'CHANDELIER_SL') else 0
                 try:
                     self._ml_engine.update_brier_scores(pos['specialist_probs'], outcome)
                 except Exception:
@@ -689,10 +687,10 @@ class PaperTrading:
             # v11.5b: Link trade result to RL memory for PPO training (final close only)
             if is_final_close and self._rl_memory:
                 try:
-                    tp1_was_hit = pos.get('tp1_hit', False) or pos.get('nike_bank_hit', False)
+                    tp1_was_hit = pos.get('tp1_hit', False) or pos.get('thor_bank_hit', False)
                     # Correct barrier label: SL-after-TP1 should not penalize RL
                     effective_barrier = barrier_hit
-                    if barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL', 'TIMEOUT', 'NIKE_RUNNER_TIMEOUT') and tp1_was_hit:
+                    if barrier_hit in ('SL', 'SL_AUTO', 'CHANDELIER_SL', 'TIMEOUT', 'THOR_RUNNER_TIMEOUT') and tp1_was_hit:
                         effective_barrier = 'TP1'  # treat as partial win for PPO reward
                     orig_size = pos.get('original_size', close_size)
                     pnl_pct = (pnl / (pos['entry'] * orig_size)) * 100 if pos['entry'] * orig_size > 0 else 0
@@ -705,7 +703,7 @@ class PaperTrading:
                     logging.debug(f"Could not link trade to RL memory: {e}")
 
             # BS implied vol tracking (final close only)
-            if is_final_close and barrier_hit in ('TP1', 'TP2', 'TP3', 'SL', 'TP_AUTO', 'SL_AUTO', 'CHANDELIER_SL', 'NIKE_RUNNER_TIMEOUT'):
+            if is_final_close and barrier_hit in ('TP1', 'TP2', 'TP3', 'SL', 'TP_AUTO', 'SL_AUTO', 'CHANDELIER_SL', 'THOR_RUNNER_TIMEOUT'):
                 try:
                     from collections import deque as _deque
                     entry_unix = pos.get('entry_unix', 0)
@@ -815,62 +813,198 @@ class PaperTrading:
         except Exception as exc:
             logging.warning(f"[stop-market] update failed for {symbol}: {exc}")
 
-    def _is_nike_v2_position(self, pos):
+    def _build_thor_exit_profile(self) -> dict:
+        """Build the exit_profile dict for Thor v2 positions.
+        Uses MAE-calibrated params (WF sim V12.3) + Gompertz constants from config.
+        Called by QUANTA_bot.py on every new entry.
+        """
+        from quanta_config import Config as _cfg
+        _ev = _cfg.events
+        return {
+            'mode':               'thor_v2',
+            'sl_atr':             float(getattr(_ev, 'thor_sl_atr_calibrated',        3.00)),
+            'bank_atr':           float(getattr(_ev, 'thor_bank_atr_calibrated',      4.20)),
+            'bank_fraction':      float(getattr(_ev, 'thor_bank_fraction_calibrated', 0.35)),
+            'runner_trail_atr':   float(getattr(_ev, 'thor_runner_trail_atr_calibrated', 2.00)),
+            'trail_activate_atr': float(getattr(_ev, 'thor_trail_activate_atr_calibrated', 1.50)),
+            'max_bars_pre_bank':  int(getattr(_ev,   'thor_max_bars_pre_calibrated',  48)),
+            'max_bars_post_bank': int(getattr(_ev,   'thor_max_bars_post_calibrated', 96)),
+            'mae_veto_bars':      int(getattr(_ev,   'thor_mae_veto_bars',            5)),
+            'mae_veto_atr':       float(getattr(_ev, 'thor_mae_veto_atr',             3.62)),
+        }
+
+    def _is_thor_v2_position(self, pos):
         profile = pos.get('exit_profile', {})
         return (
-            str(pos.get('specialist', '')).lower() == 'nike' and
+            str(pos.get('specialist', '')).lower() == 'thor' and
             pos.get('direction') == 'BULLISH' and
             isinstance(profile, dict) and
-            profile.get('mode') == 'nike_v2'
+            profile.get('mode') == 'thor_v2'
         )
 
-    def _tick_nike_v2(self, symbol, current_price):
+    # ── Gompertz dynamic exit helpers (Khairul's Identity λ companion) ──────────
+    # λ(t)=λ₀·e^(γt). Optimal bank: t*=ln(n/λ₀)/γ where n_eff=λ(t*).
+    # Constants read from config; cached at first call for hot-reload safety.
+
+    @staticmethod
+    def _gc_n_eff(entry: float, current: float, elapsed_days: float,
+                  n_prior: float = 0.700) -> float:
+        """Observed pump velocity day⁻¹, blended with prior for early stability."""
+        min_days = 3 * (5.0 / 1440.0)   # 3 bars minimum
+        if elapsed_days >= min_days and current > entry:
+            n_raw = math.log(current / entry) / elapsed_days
+            alpha = min(1.0, elapsed_days / (24 * 5.0 / 1440.0))  # full trust at 24 bars
+            return alpha * n_raw + (1.0 - alpha) * n_prior
+        return n_prior
+
+    @staticmethod
+    def _gc_t_star(n_eff: float, k: float,
+                   lambda0: float = 0.517, gamma: float = 2.92) -> float:
+        """Days until λ(t)=k·n_eff.  Returns 0 if already in decline."""
+        target = k * n_eff
+        if target <= lambda0:
+            return 0.0
+        return math.log(target / lambda0) / gamma
+
+    @staticmethod
+    def _gc_bank_atr(n_eff: float, atr_pct: float,
+                     lambda0: float = 0.517, gamma: float = 2.92,
+                     bank_min: float = 2.0, bank_max: float = 10.0) -> float:
+        """Dynamic bank ATR: peak of E[P(t)]=P₀·e^(nt)·e^(-λ₀/γ·(e^γt−1))."""
+        if n_eff <= lambda0:
+            ratio = max(n_eff / lambda0, 0.1)
+            return max(bank_min, 4.20 * (ratio ** 0.5))
+        t_star     = math.log(n_eff / lambda0) / gamma
+        price_mult = math.exp(n_eff * t_star)
+        atr_units  = (price_mult - 1.0) / max(atr_pct, 1e-6)
+        return float(max(bank_min, min(bank_max, atr_units)))
+
+    @staticmethod
+    def _gc_pre_bars(n_eff: float, k_pre: float = 1.5,
+                     lambda0: float = 0.517, gamma: float = 2.92) -> int:
+        """Max bars pre-bank: until λ(t)=k_pre·n_eff (pump stalling → abandon)."""
+        t = PaperTrading._gc_t_star(n_eff, k_pre, lambda0, gamma)
+        return max(12, min(144, int(t * 288)))
+
+    @staticmethod
+    def _gc_post_bars(n_eff: float, bars_at_bank: int, k_runner: float = 2.5,
+                      lambda0: float = 0.517, gamma: float = 2.92) -> int:
+        """Max runner bars after bank: until λ(t)=k_runner·n_eff from entry.
+        Replaces hardcoded 1152 bars (4 days) and later 96 bars (8h)."""
+        t_bank       = bars_at_bank * (5.0 / 1440.0)
+        t_runner_end = PaperTrading._gc_t_star(n_eff, k_runner, lambda0, gamma)
+        runner_days  = max(0.0, t_runner_end - t_bank)
+        return max(12, min(576, int(runner_days * 288)))
+
+    def _tick_thor_v12(self, symbol, current_price):
         pos = self.positions.get(symbol)
         if not pos:
             return
 
-        atr_move = pos['entry'] * (pos.get('atr_percent', 1.0) / 100.0)
+        entry    = pos['entry']
+        atr_pct  = pos.get('atr_percent', 1.0) / 100.0
+        atr_move = entry * atr_pct
         if atr_move <= 0:
             self.risk_manager.heartbeat(self.balance)
             return
 
-        bank_fraction = float(pos.get('nike_bank_fraction', 0.5))
-        bank_price = float(pos.get('nike_bank_price', pos['entry'] + 2.0 * atr_move))
-        max_pre = int(pos.get('max_bars_pre_bank', pos.get('timeout_bars') or 24))
-        max_post = int(pos.get('max_bars_post_bank', max_pre))
-        trail_atr = float(pos.get('nike_runner_trail_atr', 1.5))
-        bars_elapsed = max(0.0, (time.time() - pos.get('entry_unix', time.time())) / 300.0)
+        # ── Read calibrated exit params from exit_profile ─────────────────────
+        ep            = pos.get('exit_profile', {})
+        bank_fraction = float(ep.get('bank_fraction', 0.35))
+        sl_atr        = float(ep.get('sl_atr',        3.00))
+        trail_atr     = float(ep.get('runner_trail_atr', 2.00))
+        trail_act_atr = float(ep.get('trail_activate_atr', 1.50))
+        mae_veto_bars = int(ep.get('mae_veto_bars', 5))
+        mae_veto_atr  = float(ep.get('mae_veto_atr', 3.62))
 
-        if not pos.get('nike_bank_hit', False):
-            if current_price <= pos.get('sl_price', pos['entry'] - 0.8 * atr_move):
+        # ── Config Gompertz constants (read once per tick for hot-reload) ──────
+        from quanta_config import Config as _cfg
+        _ev         = _cfg.events
+        n_prior     = float(getattr(_ev, 'thor_gompertz_n_prior',  0.700))
+        lambda0     = float(getattr(_ev, 'thor_gompertz_lambda0',  0.517))
+        gamma       = float(getattr(_ev, 'thor_gompertz_gamma',    2.92))
+        k_pre       = float(getattr(_ev, 'thor_gompertz_k_pre',    1.5))
+        k_runner    = float(getattr(_ev, 'thor_gompertz_k_runner', 2.5))
+        bank_min    = float(getattr(_ev, 'thor_gompertz_bank_min_atr', 2.0))
+        bank_max    = float(getattr(_ev, 'thor_gompertz_bank_max_atr', 10.0))
+
+        # ── Time & pump velocity ──────────────────────────────────────────────
+        elapsed_days = max(0.0, (time.time() - pos.get('entry_unix', time.time())) / 86400.0)
+        bars_elapsed = elapsed_days * 288   # approx bars at 5m
+
+        n_eff = self._gc_n_eff(entry, current_price, elapsed_days, n_prior)
+        pos['gompertz_n_eff'] = round(n_eff, 4)
+
+        # ── Track lowest price for MAE veto ───────────────────────────────────
+        lowest = min(pos.get('gompertz_lowest', entry), current_price)
+        pos['gompertz_lowest'] = lowest
+
+        if not pos.get('thor_bank_hit', False):
+            # ── MAE early-exit veto (first mae_veto_bars bars) ────────────────
+            if bars_elapsed <= mae_veto_bars:
+                adverse_atr = (entry - lowest) / max(atr_move, 1e-8)
+                if adverse_atr > mae_veto_atr:
+                    self.close_position(symbol, lowest, barrier_hit='MAE_VETO')
+                    self.risk_manager.heartbeat(self.balance)
+                    return
+
+            # ── Gompertz dynamic bank target ──────────────────────────────────
+            dyn_bank_atr = self._gc_bank_atr(n_eff, atr_pct, lambda0, gamma, bank_min, bank_max)
+            dyn_bank_px  = entry + dyn_bank_atr * atr_move
+            pos['gompertz_dyn_bank_atr'] = round(dyn_bank_atr, 3)
+            pos['thor_bank_price']       = dyn_bank_px   # keep in sync for dashboard
+
+            # ── Gompertz dynamic pre-bank timeout ────────────────────────────
+            dyn_max_pre = self._gc_pre_bars(n_eff, k_pre, lambda0, gamma)
+            pos['gompertz_dyn_max_pre'] = dyn_max_pre
+
+            # ── SL check ─────────────────────────────────────────────────────
+            if current_price <= pos.get('sl_price', entry - sl_atr * atr_move):
                 self.close_position(symbol, current_price, barrier_hit='SL')
                 self.risk_manager.heartbeat(self.balance)
                 return
 
-            if current_price >= bank_price:
+            # ── Bank hit ─────────────────────────────────────────────────────
+            if current_price >= dyn_bank_px:
                 self.close_position(symbol, current_price, barrier_hit='TP1',
                                     partial=True, partial_fraction=bank_fraction)
                 if symbol in self.positions:
-                    self.positions[symbol]['nike_bank_hit'] = True
-                    self.positions[symbol]['tp1_hit'] = True
-                    self.positions[symbol]['nike_runner_peak'] = current_price
-                    self.positions[symbol]['sl_price'] = self.positions[symbol]['entry']
+                    dyn_max_post = self._gc_post_bars(n_eff, int(bars_elapsed), k_runner, lambda0, gamma)
+                    self.positions[symbol]['thor_bank_hit']        = True
+                    self.positions[symbol]['tp1_hit']              = True
+                    self.positions[symbol]['thor_runner_peak']     = current_price
+                    self.positions[symbol]['sl_price']             = entry   # breakeven
+                    self.positions[symbol]['thor_trail_active']    = False
+                    self.positions[symbol]['gompertz_dyn_max_post'] = dyn_max_post
+                    self.positions[symbol]['gompertz_bank_bar']    = bars_elapsed
                 self.risk_manager.heartbeat(self.balance)
                 return
 
-            if bars_elapsed >= max_pre:
-                self.close_position(symbol, current_price, barrier_hit='TIMEOUT')
+            # ── Pre-bank timeout ──────────────────────────────────────────────
+            if bars_elapsed >= dyn_max_pre:
+                self.close_position(symbol, current_price, barrier_hit='TIMEOUT_PRE')
                 self.risk_manager.heartbeat(self.balance)
                 return
 
             self.risk_manager.heartbeat(self.balance)
             return
 
-        new_peak = max(pos.get('nike_runner_peak', current_price), current_price)
-        trail_stop = max(pos.get('sl_price', pos['entry']), pos['entry'], new_peak - atr_move * trail_atr)
-        self.positions[symbol]['nike_runner_peak'] = new_peak
-        self.positions[symbol]['sl_price'] = trail_stop
-        # Phase-E: update exchange-side stop when trail moves (throttled to >0.05% change)
+        # ── Runner phase ──────────────────────────────────────────────────────
+        new_peak = max(pos.get('thor_runner_peak', current_price), current_price)
+        pos['thor_runner_peak'] = new_peak
+
+        # Trail activates only after price clears bank + trail_activate_atr
+        bank_px      = pos.get('thor_bank_price', entry + 4.20 * atr_move)
+        trail_act_px = bank_px + trail_act_atr * atr_move
+        if new_peak >= trail_act_px:
+            pos['thor_trail_active'] = True
+
+        if pos.get('thor_trail_active', False):
+            trail_stop = max(pos.get('sl_price', entry), entry,
+                             new_peak - atr_move * trail_atr)
+        else:
+            trail_stop = max(pos.get('sl_price', entry), entry)
+        pos['sl_price'] = trail_stop
         self._update_exchange_stop(symbol)
 
         if current_price <= trail_stop:
@@ -878,22 +1012,26 @@ class PaperTrading:
             self.risk_manager.heartbeat(self.balance)
             return
 
-        if bars_elapsed >= max_post:
-            self.close_position(symbol, current_price, barrier_hit='NIKE_RUNNER_TIMEOUT')
+        # ── Dynamic runner timeout ────────────────────────────────────────────
+        dyn_max_post = pos.get('gompertz_dyn_max_post',
+                               self._gc_post_bars(n_eff, int(pos.get('gompertz_bank_bar', bars_elapsed)),
+                                                  k_runner, lambda0, gamma))
+        bank_bar = pos.get('gompertz_bank_bar', 0)
+        if bars_elapsed >= bank_bar + dyn_max_post:
+            self.close_position(symbol, current_price, barrier_hit='THOR_RUNNER_TIMEOUT')
             self.risk_manager.heartbeat(self.balance)
             return
 
         self.risk_manager.heartbeat(self.balance)
 
     def tick(self, symbol, current_price):
-        # v11.6: ATR-based 3-tier TP with partial closes and Chandelier trailing after TP3
         if symbol not in self.positions:
             return
         pos = self.positions[symbol]
         direction = pos['direction']
 
-        if self._is_nike_v2_position(pos):
-            self._tick_nike_v2(symbol, current_price)
+        if pos.get('agent') == 'Thor' or pos.get('specialist') == 'thor' or self._is_thor_v2_position(pos):
+            self._tick_thor_v12(symbol, current_price)
             return
 
         # Retrieve stored barrier levels (fallback to old hardcoded logic if missing)

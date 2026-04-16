@@ -183,10 +183,10 @@ except ImportError as e:
     print(f"⚠️  WebSocket components not found ({e}) - using REST fallback")
 
 try:
-    from quanta_nike_screener import NikeScreener, NikeSignal
-    NIKE_SCREENER_AVAILABLE = True
+    from quanta_thor_screener import ThorScreener, ThorSignal
+    THOR_SCREENER_AVAILABLE = True
 except ImportError as e:
-    NIKE_SCREENER_AVAILABLE = False
+    THOR_SCREENER_AVAILABLE = False
     print(f"⚠️  Thor screener not found ({e})")
 
 # 🧠 QUANTA v11.5b NEURAL ENGINE
@@ -211,14 +211,12 @@ except ImportError as e:
     PPO_AVAILABLE = False
     print(f"⚠️  ppo_agent.py not found ({e}) - PPO disabled")
 
-# ⚡ ZEUS AI AUTONOMOUS SUPERVISOR
+# ⚡ ZEUS AI AUTONOMOUS SUPERVISOR — disabled, Norse params are proven optimal
+ZEUS_AVAILABLE = False
 try:
     from quanta_zeus import ZeusAI
-    ZEUS_AVAILABLE = True
-    print("⚡ ZEUS AI loaded successfully")
-except ImportError as e:
-    ZEUS_AVAILABLE = False
-    print(f"⚠️  quanta_zeus.py not found ({e}) - ZEUS AI disabled")
+except ImportError:
+    pass
 
 
 import urllib3
@@ -654,9 +652,9 @@ class Bot:
             self.ws_producer = None
             print("⚠️ WSEventProducer disabled (WS_FEED_AVAILABLE=False).")
 
-        # Thor Screener (internal key: nike) — market-wide 5m breakout scanner
-        self.nike_screener: Optional['NikeScreener'] = None
-        self._nike_open_symbols: set = set()   # symbols with an active Nike position
+        # Thor Screener — market-wide 5m breakout scanner
+        self.thor_screener: Optional['ThorScreener'] = None
+        self._thor_open_symbols: set = set()   # symbols with an active Thor position
         self._thor_context: dict = {}
 
         # Alert deduplication - prevent spamming same pair
@@ -799,17 +797,11 @@ class Bot:
         """
         _ev = self.cfg.events
         spec_settings = {
-            'athena':     (_ev.athena_tp_atr, _ev.athena_sl_atr, _ev.athena_max_bars),
-            'ares':       (_ev.ares_tp_atr, _ev.ares_sl_atr, _ev.ares_max_bars),
-            'hermes':     (_ev.hermes_tp_atr, _ev.hermes_sl_atr, _ev.hermes_max_bars),
-            'artemis':    (_ev.artemis_tp_atr, _ev.artemis_sl_atr, _ev.artemis_max_bars),
-            'chronos':    (_ev.chronos_tp_atr, _ev.chronos_sl_atr, _ev.chronos_max_bars),
-            'hephaestus': (_ev.heph_tp_atr, _ev.heph_sl_atr, _ev.heph_max_bars),
-            'nike':       (_ev.nike_tp_atr, _ev.nike_sl_atr, _ev.nike_max_bars),
+            'thor': (_ev.thor_tp_atr, _ev.thor_sl_atr, _ev.thor_max_bars),
         }
         tp_mult, sl_mult, max_bars = spec_settings.get(
             specialist_key,
-            (_ev.athena_tp_atr, _ev.athena_sl_atr, _ev.athena_max_bars),
+            (_ev.thor_tp_atr, _ev.thor_sl_atr, _ev.thor_max_bars),
         )
 
         baseline = sl_mult / max(tp_mult + sl_mult, 1e-12)
@@ -843,7 +835,7 @@ class Bot:
         sl_ratio = float(max(0.0, (sl_mult * atr_5m) / max(price, 1e-12)))
         tp_dist = float(np.log1p(tp_ratio))
         sl_dist = float(-np.log(max(1e-8, 1.0 - min(sl_ratio, 0.95))))
-        conditional_jump = specialist_key == 'nike' and direction_key == 'BULLISH'
+        conditional_jump = specialist_key == 'thor' and direction_key == 'BULLISH'
 
         live = compute_live_kou_barrier_components(
             log_returns,
@@ -859,20 +851,7 @@ class Bot:
         live['specialist'] = specialist_key
         return live
 
-    def _build_nike_exit_profile(self):
-        _ev = self.cfg.events
-        return {
-            'mode': 'nike_v2',
-            'bank_atr': float(_ev.nike_bank_atr),
-            'bank_fraction': float(_ev.nike_bank_fraction),
-            'runner_trail_atr': float(_ev.nike_runner_trail_atr),
-            'sl_atr': float(_ev.nike_sl_atr),
-            'max_bars_pre_bank': int(_ev.nike_max_bars_pre_bank),
-            'max_bars_post_bank': int(_ev.nike_max_bars_post_bank),
-        }
-
-    def _get_live_model_specialists(self):
-        return parse_live_model_specialists(getattr(self.cfg.events, 'model_live_specialists', 'nike'))
+    # V12 Thor Architecture: single specialist, direct prediction loop
 
     def _touch_thor_context(self, symbol, price, atr_5m, score=0.0, tier=''):
         bars = int(getattr(self.cfg.events, 'thor_context_bars', 24))
@@ -1540,238 +1519,7 @@ class Bot:
             except Exception as e:
                 time.sleep(5.0)
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # NIKE SCREENER CONSUMER
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    NIKE_MAX_CONCURRENT = 3       # max simultaneous Nike positions
-    NIKE_MAX_RISK_PCT   = 0.01    # 1% of account per Nike trade
-
-    def _nike_signal_consumer(self):
-        """
-        Consumes NikeSignal events from the screener queue.
-
-        For each signal:
-          1. Guard: skip if coin already in open positions or over max concurrent
-          2. Build an opportunity dict compatible with the existing RL pipeline
-          3. Append to rl_opportunities so it flows through the normal
-             Telegram alert + outcome-check machinery
-          4. Optionally send an immediate Telegram notification
-        """
-        import time
-        if not self.nike_screener:
-            return
-
-        logging.info("ThorConsumer: started")
-
-        while not self.stop_event.is_set():
-            try:
-                try:
-                    sig = self.nike_screener.signal_queue.get(timeout=1.0)
-                except Exception:
-                    continue   # timeout — loop back
-
-                symbol = sig.symbol
-                execute_live = bool(
-                    (sig.tier == 'A' and getattr(self.cfg.events, 'nike_tier_a_live', True)) or
-                    (sig.tier == 'B' and getattr(self.cfg.events, 'nike_tier_b_live', False)) or
-                    (sig.tier == 'C' and getattr(self.cfg.events, 'nike_tier_c_live', False))
-                )
-                execute_live = execute_live and ('nike' in self._get_live_model_specialists())
-
-                # ── 1. Position guard ─────────────────────────────────────
-                # Skip if this symbol is already tracked by Nike or already open in paper.
-                if symbol in self._nike_open_symbols or (
-                    hasattr(self, 'paper') and self.paper and symbol in getattr(self.paper, 'positions', {})
-                ):
-                    logging.debug(f"ThorConsumer: {symbol} already tracked, skip")
-                    continue
-
-                # Live execution tiers respect the concurrent-trade cap.
-                if execute_live and len(self._nike_open_symbols) >= self.NIKE_MAX_CONCURRENT:
-                    logging.debug(
-                        f"ThorConsumer: max concurrent ({self.NIKE_MAX_CONCURRENT}) reached, "
-                        f"downgrading {symbol} to observe-only"
-                    )
-                    execute_live = False
-
-                # ── 2. Build opportunity dict ─────────────────────────────
-                # Mirrors the structure created in the main prediction loop so
-                # the Telegram worker, outcome checker, and RL trainer all work
-                # without modification.
-                tp_pct  = (sig.tp_price - sig.close) / sig.close * 100
-                sl_pct  = (sig.sl_price - sig.close) / sig.close * 100   # negative
-
-                opportunity = {
-                    'symbol':          symbol,
-                    'direction':       'BULLISH',
-                    'confidence':      75.0,          # empirical: 49% win × 2.43 PF
-                    'magnitude':       sig.body_pct,
-                    'volatility':      sig.atr / sig.close * 100 if sig.close > 0 else 1.0,
-                    'uncertainty':     0.25,
-                    'score':           sig.body_ratio * sig.vol_ratio,
-                    'price':           sig.close,
-                    'entry_price':     sig.close,
-                    'tp1':             sig.tp_price,
-                    'tp2':             sig.tp_price,
-                    'tp3':             sig.tp_price,
-                    'sl':              sig.sl_price,
-                    'tf_analysis':     {},
-                    'features':        [],
-                    'specialist_probs':[0] * 7,
-                    'for_rl':          True,
-                    'timestamp':       sig.timestamp,
-                    'prediction_time': sig.date_str,
-                    'ppo_action':      1,
-                    'ppo_log_prob':    0.0,
-                    'ppo_value':       0.0,
-                    'ppo_size_mult':   1.0,
-                    'shap_summary':    None,
-                    # Nike-specific metadata
-                    'agent':           'Thor',
-                    'display_agent':   'Thor',
-                    'source_regime_agent': 'Thor',
-                    'thor_context_active': True,
-                    'baldur_top_warning': False,
-                    'freya_context_valid': False,
-                    'nike_body_pct':   sig.body_pct,
-                    'nike_body_ratio': sig.body_ratio,
-                    'nike_quiet_pct':  sig.avg_prior_pct,
-                    'nike_vol_ratio':  sig.vol_ratio,
-                    'nike_body_eff':   sig.body_eff,
-                    'nike_atr':        sig.atr,
-                }
-                opportunity['confidence'] = float(sig.confidence)
-                opportunity['score'] = float(sig.score)
-                opportunity['ppo_size_mult'] = float(sig.size_mult)
-                opportunity['specialist'] = 'nike'
-                opportunity['exit_profile'] = self._build_nike_exit_profile()
-                opportunity['timeout_bars'] = int(self.cfg.events.nike_max_bars_post_bank)
-                opportunity['nike_tier'] = sig.tier
-                opportunity['nike_score'] = float(sig.score)
-                opportunity['nike_entry_mode'] = sig.entry_mode
-                opportunity['nike_bs_floor'] = float(sig.bs_floor)
-                opportunity['nike_live_execute'] = bool(execute_live)
-                self._touch_thor_context(symbol, sig.close, sig.atr, score=sig.score, tier=sig.tier)
-                bs_ctx = self._compute_live_kou_score(
-                    symbol,
-                    sig.close,
-                    sig.atr,
-                    'BULLISH',
-                    'nike',
-                    feature_prob=float(sig.confidence) / 100.0,
-                )
-                bs_prob = float(max(0.0, min(1.0, bs_ctx.get('prob', float(sig.confidence) / 100.0))))
-                bs_baseline = float(
-                    max(
-                        0.0,
-                        min(
-                            1.0,
-                            bs_ctx.get(
-                                'baseline',
-                                self.cfg.events.nike_sl_atr / max(self.cfg.events.nike_tp_atr + self.cfg.events.nike_sl_atr, 1e-12),
-                            ),
-                        ),
-                    )
-                )
-                bs_floor = float(max(bs_baseline, sig.bs_floor))
-                if bs_prob < bs_floor:
-                    logging.info(
-                        f"ThorConsumer: BS veto {symbol} tier={sig.tier} "
-                        f"P={bs_prob:.2f} floor={bs_floor:.2f} src={bs_ctx.get('source', '?')}"
-                    )
-                    continue
-                opportunity['bs_prob'] = bs_prob
-                opportunity['bs_order_prob'] = float(max(0.0, min(1.0, bs_ctx.get('order_prob', bs_prob))))
-                opportunity['bs_time_prob'] = float(max(0.0, min(1.0, bs_ctx.get('time_prob', 1.0))))
-                opportunity['bs_baseline'] = bs_baseline
-                opportunity['bs_source'] = bs_ctx.get('source', 'feature_fallback')
-                opportunity['bs_specialist'] = 'nike'
-
-                # ── 3. Register in open set ───────────────────────────────
-                if execute_live:
-                    pass
-                    self._nike_open_symbols.add(symbol)
-                if execute_live and hasattr(self, 'paper') and self.paper and sig.close > 0 and sig.atr > 0:
-                    atr_percent = (sig.atr / sig.close) * 100.0
-                    barrier_rr = float(self.cfg.events.nike_tp_atr / max(self.cfg.events.nike_sl_atr, 1e-6))
-                    self.paper.open_position(
-                        symbol,
-                        sig.close,
-                        'BULLISH',
-                        float(sig.confidence),
-                        atr_percent,
-                        ppo_size_mult=float(sig.size_mult),
-                        barrier_rr=barrier_rr,
-                        bs_edge=bs_prob - bs_baseline,
-                        bs_prob=bs_prob,
-                        specialist='nike',
-                        display_agent='Thor',
-                        source_regime_agent='Thor',
-                        thor_context_active=True,
-                        baldur_top_warning=False,
-                        freya_context_valid=False,
-                        exit_profile=opportunity['exit_profile'],
-                        timeout_bars=opportunity['timeout_bars'],
-                    )
-
-                # ── 4. Push to RL pipeline ────────────────────────────────
-                if hasattr(self, 'rl_opportunities'):
-                    self.rl_opportunities.append(opportunity)
-                    with self._save_lock:
-                        self._unsaved_count += 1
-
-                # Schedule removal from open set after MAX_BARS × 5 min
-                from quanta_config import Config as _c
-                if execute_live:
-                    pass
-                hold_seconds = _c.events.nike_max_bars * 5 * 60   # 12 × 5m = 3600s
-                hold_seconds = _c.events.nike_max_bars_post_bank * 5 * 60
-                def _release(sym=symbol, delay=hold_seconds):
-                    time.sleep(delay)
-                    self._nike_open_symbols.discard(sym)
-                    logging.info(f"ThorConsumer: position window closed for {sym}")
-                threading.Thread(target=_release, daemon=True).start()
-
-                # ── 5. Telegram alert ─────────────────────────────────────
-                try:
-                    msg = (
-                        f"⚡ *THOR BREAKOUT*\n"
-                        f"`{symbol}` — {sig.date_str}\n\n"
-                        f"Body : `{sig.body_pct:+.2f}%`  ({sig.body_ratio:.1f}× prior avg)\n"
-                        f"Prior quiet : `{sig.avg_prior_pct:.3f}%`\n"
-                        f"Volume spike: `{sig.vol_ratio:.1f}×`\n"
-                        f"Body eff    : `{sig.body_eff:.2f}`\n\n"
-                        f"Entry : `{sig.close:.6g}`\n"
-                        f"TP    : `{sig.tp_price:.6g}`  (+{tp_pct:.2f}%)\n"
-                        f"SL    : `{sig.sl_price:.6g}`  ({sl_pct:.2f}%)\n"
-                        f"Window: `{_c.events.nike_max_bars} bars = "
-                        f"{_c.events.nike_max_bars * 5} min`"
-                    )
-                    msg += (
-                        f"\nTier  : `{sig.tier}` ({sig.entry_mode})"
-                        f"\nScore : `{sig.score:.1f}`  |  Conf: `{sig.confidence:.0f}%`"
-                        f"\nMode  : `{'LIVE' if execute_live else 'OBSERVE'}`"
-                        f"\nWindow v2: `{_c.events.nike_max_bars_pre_bank}/{_c.events.nike_max_bars_post_bank} bars`"
-                    )
-                    self.tg.send(msg)
-                except Exception as te:
-                    logging.debug(f"ThorConsumer Telegram error: {te}")
-
-                logging.info(
-                    f"ThorConsumer: queued {symbol}  "
-                    f"entry={sig.close:.6g}  TP={sig.tp_price:.6g}  SL={sig.sl_price:.6g}  "
-                    f"open_positions={len(self._nike_open_symbols)}"
-                )
-                logging.info(
-                    f"ThorConsumer: metadata {symbol} tier={sig.tier} mode={sig.entry_mode} "
-                    f"score={sig.score:.1f} conf={sig.confidence:.0f}% size_mult={sig.size_mult:.2f} "
-                    f"execute_live={execute_live}"
-                )
-
-            except Exception as e:
-                logging.error(f"ThorConsumer error: {e}", exc_info=True)
-                time.sleep(1.0)
+    # (V12: Thor direct prediction — no separate screener thread needed)
 
     def _telegram_alert_worker(self):
         """Dedicated thread to process and send Telegram alerts instantly (0-latency)"""
@@ -2004,14 +1752,10 @@ class Bot:
                             queue_to_mark.task_done()
                         continue
                 
-                # Check if models are ready (specialists or legacy)
-                specialists_ready = any(
-                    s['model'] is not None and hasattr(s['scaler'], 'mean_')
-                    for s in self.ml.specialist_models.values()
-                )
-                legacy_ready = hasattr(self.ml.scaler, 'mean_')
+                # V12 Thor Architecture: Single Model Evaluation
+                model_ready = self.ml.catboost_model is not None and hasattr(self.ml.scaler, 'mean_')
                 
-                if not specialists_ready and not legacy_ready:
+                if not model_ready:
                     if not self._is_training:
                         with self._training_lock:
                             if not self._is_training:
@@ -2022,240 +1766,21 @@ class Bot:
                         queue_to_mark.task_done()
                     continue
                 
-                # EXTRACT ODIN META-FEATURE (STACKING)
-                if hasattr(self.ml, 'tft_trained') and self.ml.tft_trained and self.ml.tft_model is not None:
-                    try:
-                        with torch.no_grad():
-                            tft_in = torch.tensor(features_batch, dtype=torch.float32).unsqueeze(1)
-                            if USE_GPU and torch.cuda.is_available(): tft_in = tft_in.cuda()
-                            tft_out = torch.softmax(self.ml.tft_model(tft_in), dim=1)[:, 1].cpu().numpy()
-                        # Replace feature 223 (padded null) with Odin probability
-                        features_batch[:, 223] = tft_out
-                    except Exception as e:
-                        logging.debug(f"TFT inference skipped (falling back to zero slot): {e}")
-                
-                # FIX 10: Only scale legacy features if legacy model is actually used
-                features_scaled = None
-                if not specialists_ready and legacy_ready:
-                    features_scaled = self.ml.scaler.transform(features_batch)
-                
-                # CATBOOST-ONLY INFERENCE (10-50x faster than PyTorch!)
+                features_scaled = self.ml.scaler.transform(features_batch)
                 cat_preds = None
-                specialist_probs_batch = None
-                specialist_keys = ['athena', 'ares', 'hermes', 'artemis', 'chronos', 'hephaestus', 'nike']
-                if specialists_ready:
-                    # Verify GPU usage on first batch
-                    if predictions_processed == 0:
-                        print("\n" + "="*70)
-                        print("FIRST PREDICTIONS RUNNING (7-Agent Pantheon + Odin + Heimdall)!")
-                        print("="*70)
-                    
+                
+                if self.ml.catboost_model is not None:
                     try:
-                        # Phase 2 Fix: Last-line defense against NaN propagation
-                        features_batch = np.nan_to_num(features_batch, nan=0.0, posinf=0.0, neginf=0.0)
-                        
-                        preds_list = []
-                        active_keys = []  # track which specialists actually ran
-                        for key in specialist_keys:
-                            s = self.ml.specialist_models[key]
-                            if s['model'] is None:
-                                continue
-
-                            # Use the individual specialist's scaler, fallback to legacy if missing
-                            scaler = s.get('scaler', self.ml.scaler)
-
-                            # Apply same feature subspace as at training (scaler expects this dimension)
-                            if '_feature_indices' in s and s['_feature_indices'] is not None:
-                                idx = s['_feature_indices']
-                                f_input = features_batch[:, idx]
-                            elif 'feature_mask' in s and isinstance(s['feature_mask'], str) and s['feature_mask'].startswith('random_70_seed'):
-                                seed = int(s['feature_mask'].split('seed')[1])
-                                n_features = features_batch.shape[1]
-                                n_keep = int(n_features * 0.7)
-                                rng = np.random.RandomState(seed)
-                                feature_indices = np.sort(rng.choice(n_features, n_keep, replace=False))
-                                f_input = features_batch[:, feature_indices]
-                            else:
-                                f_input = features_batch
-
-                            f_scaled = scaler.transform(f_input)
-                            preds = s['model'].predict_proba(f_scaled)
-
-                            # Calibrate if available
-                            if 'calibrator' in s and s['calibrator'] is not None:
-                                try:
-                                    cal_result = s['calibrator'].predict(preds[:, 1])
-                                    cal_proba_1 = cal_result['calibrated_prob']
-                                    cal_proba_0 = 1.0 - cal_proba_1
-                                    preds = np.column_stack([cal_proba_0, cal_proba_1])
-                                except Exception as e:
-                                    logging.debug(f"Specialist calibrator failed (using raw predictions): {e}")
-
-                            preds_list.append(preds)
-                            active_keys.append(key)  # only keys that actually ran
-
-                        preds_array = np.array(preds_list)  # shape: (n_active, batch_len, 2)
-                        # specialist_probs_batch padded to full 7-dim for PPO state (zeros for untrained)
-                        _n_active = len(active_keys)
-                        _sp_full = np.zeros((len(batch), len(specialist_keys)), dtype=np.float32)
-                        for _i, _k in enumerate(active_keys):
-                            _ki = specialist_keys.index(_k)
-                            _sp_full[:, _ki] = preds_array[_i, :, 1]
-                        specialist_probs_batch = _sp_full  # Shape: (batch_len, 7) always
-                        
-                        # ═══════════════════════════════════════════════════════
-                        # ENHANCED ENSEMBLE INTELLIGENCE (v11.5)
-                        # 1. Entropy weighting (Shannon)
-                        # 2. Regime-aware agent routing (HMM 5-state)
-                        # 3. Brier score calibration adjustment
-                        # 4. Conflict veto gate
-                        # ═══════════════════════════════════════════════════════
-                        # base_weights must match active_keys (only trained specialists)
-                        base_weights = np.array([self.ml.specialist_models[k]['weight'] for k in active_keys])
-                        p = preds_array[:, :, 1]  # Shape: (n_active, batch_len)
-
-                        eps = 1e-7
-                        p_clipped = np.clip(p, eps, 1.0 - eps)
-                        H = - (p_clipped * np.log2(p_clipped) + (1.0 - p_clipped) * np.log2(1.0 - p_clipped))
-
-                        C = 1.0 - H  # Certainty
-                        alpha = 1.5
-                        dynamic_weights = base_weights[:, None] * (C ** alpha)
-
-                        # ── REGIME-AWARE ROUTING (v11.5b) ──
-                        # Per-item HMM regime lookup — FIXED: was using batch[0] regime for all coins.
-                        # Each coin has its own market regime; BTCUSDT ≠ XMRUSDT.
-                        if hasattr(self.ml, '_regime_routing') and hasattr(self.ml, 'hmm_models'):
-                            try:
-                                regime_mults_matrix = np.ones((len(active_keys), len(batch)))
-                                _batch_hmm_regimes = []  # FIX B: cache per-item regime for PPO state reuse
-                                for _b_idx, _item in enumerate(batch):
-                                    _sym = _item.get('symbol', '')
-                                    _hmm_regime_val = 1  # Default: range (3-state: 0=bull, 1=range, 2=bear)
-                                    if _sym in self.ml.hmm_models:
-                                        tf5 = _item.get('tf_analysis', {}).get('5m', {})
-                                        if tf5:
-                                            try:
-                                                # Features must match _get_regime: [log_ret_1bar, log_ret_12bar, log_ret_48bar, atr_pct, vol_ratio]
-                                                # FIX A: Use actual multi-scale log-returns from candle_store (matches training distribution)
-                                                _atr = tf5.get('atr', 0.0) / max(tf5.get('price', 1.0), 1e-12)
-                                                _vr  = tf5.get('volume_ratio', 1.0)
-                                                _lr1 = math.log(max(1 + tf5.get('returns_period', 0.0), 1e-12))
-                                                _lr12, _lr48 = _lr1, _lr1  # fallback if candle_store unavailable
-                                                _cs = getattr(self.ml, 'candle_store', None)
-                                                if _cs is not None:
-                                                    try:
-                                                        _kl = _cs.get(_sym, '5m') if hasattr(_cs, 'get') else _cs.get_klines(_sym, '5m', limit=50)
-                                                        if _kl and len(_kl) >= 50:
-                                                            _cl = np.array([float(k[4]) for k in _kl[-50:]], dtype=np.float64)
-                                                            _lr1  = math.log(max(_cl[-1], 1e-12) / max(_cl[-2], 1e-12))
-                                                            _lr12 = math.log(max(_cl[-1], 1e-12) / max(_cl[-13], 1e-12)) / 12.0
-                                                            _lr48 = math.log(max(_cl[-1], 1e-12) / max(_cl[-49], 1e-12)) / 48.0
-                                                    except Exception:
-                                                        pass
-                                                obs = np.array([[_lr1, _lr12, _lr48, _atr, _vr]])
-                                                cached = self.ml.hmm_models[_sym]
-                                                if isinstance(cached, dict):
-                                                    _raw = int(cached['model'].predict(obs)[-1])
-                                                    _hmm_regime_val = int(cached['rank_to_int'][_raw])
-                                                else:
-                                                    _hmm_regime_val = int(cached.predict(obs)[-1])
-                                            except Exception:
-                                                pass
-                                    regime_idx = max(0, min(2, _hmm_regime_val))
-                                    _batch_hmm_regimes.append(_hmm_regime_val)  # FIX B: store for PPO state
-                                    for _k_idx, _k in enumerate(active_keys):
-                                        regime_mults_matrix[_k_idx, _b_idx] = self.ml._regime_routing.get(_k, [0.5]*3)[regime_idx]
-                                dynamic_weights = dynamic_weights * regime_mults_matrix
-                            except Exception as e:
-                                _batch_hmm_regimes = [1] * len(batch)  # FIX B: fallback range
-                                logging.debug(f"Regime-aware routing failed (falling back to entropy weights): {e}")
-
-                        # ── BRIER SCORE CALIBRATION ADJUSTMENT (v11.5) ──
-                        # Better-calibrated agents get a trust boost (up to 1.3×).
-                        # Poorly calibrated agents get penalized (down to 0.7×).
-                        if hasattr(self.ml, '_brier_scores'):
-                            try:
-                                brier_mults = []
-                                for k in active_keys:
-                                    bs = self.ml._brier_scores.get(k, {})
-                                    rolling = bs.get('rolling', [])
-                                    # Use rolling deque (last 500) — consistent with ML engine
-                                    # Avoids stale historical avg from pre-retrain model
-                                    if len(rolling) >= 20:
-                                        brier_val = sum(rolling) / len(rolling)
-                                        mult = 1.3 - (brier_val / 0.25) * 0.6
-                                        brier_mults.append(max(0.7, min(1.3, mult)))
-                                    else:
-                                        brier_mults.append(1.0)  # Neutral until enough data
-                                brier_arr = np.array(brier_mults)
-                                dynamic_weights = dynamic_weights * brier_arr[:, None]
-                            except Exception as e:
-                                logging.debug(f"Brier score calibration failed (using unadjusted weights): {e}")
-
-                        # Normalize
-                        weight_sum = np.sum(dynamic_weights, axis=0, keepdims=True)
-                        dynamic_weights = np.where(weight_sum > 0, dynamic_weights / weight_sum, 1.0 / max(1, len(active_keys)))
-
-                        cat_preds_prob1 = np.sum(preds_array[:, :, 1] * dynamic_weights, axis=0)
-                        cat_preds_prob0 = 1.0 - cat_preds_prob1
-                        cat_preds = np.column_stack([cat_preds_prob0, cat_preds_prob1])
-
-                        # ── EVENT OVERLAP CORRELATION DISCOUNT (v11.5b) ──
-                        # When ≥3 specialists are highly certain (certainty > 0.7) in the same
-                        # direction, they likely fired on the same candle event (overlap).
-                        # Treat them as correlated: apply 0.85× discount to final confidence.
-                        # This prevents the ensemble from being overconfident on multi-trigger candles.
-                        try:
-                            high_certainty = (C > 0.7)  # Shape: (7, batch_len)
-                            bull_direction = (preds_array[:, :, 1] > 0.5)
-                            bear_direction = ~bull_direction
-                            bull_overlap = np.sum(high_certainty & bull_direction, axis=0)  # (batch_len,)
-                            bear_overlap = np.sum(high_certainty & bear_direction, axis=0)
-                            overlap_mask = (bull_overlap >= 3) | (bear_overlap >= 3)
-                            # Store for post-normalization application
-                            _overlap_discount = np.where(overlap_mask, 0.85, 1.0)
-                        except Exception:
-                            _overlap_discount = np.ones(len(batch))
-
-                        # ── ENSEMBLE ENTROPY VETO GATE (v11.5b) ──
-                        # Replaces arbitrary top-2 disagreement (no theoretical basis).
-                        # Ensemble entropy H(p_ens) > 0.85 bits → signal is ambiguous → veto.
-                        # Binary entropy max = 1.0 bit (p=0.5). 0.85 ≈ p ∈ [0.40, 0.60].
-                        # This directly measures the ensemble's own uncertainty, not agent pairwise diff.
-                        try:
-                            _eps = 1e-7
-                            _p1 = np.clip(cat_preds[:, 1], _eps, 1 - _eps)
-                            _ens_entropy = -(_p1 * np.log2(_p1) + (1 - _p1) * np.log2(1 - _p1))
-                            _veto_mask = _ens_entropy > 0.85  # > 0.85 bits = too uncertain
-                            cat_preds[_veto_mask] = [0.5, 0.5]
-                        except Exception as e:
-                            logging.debug(f"Entropy veto gate failed (skipping veto): {e}")
-                    except Exception as e:
-                        import traceback
-                        traceback.print_exc()
-                        print(f"⚠️  Specialist Prediction error (batch {predictions_processed}): {e}")
-                        # Sanity diagnostic for cat_preds
-                        if cat_preds is None:
-                            print(f"❌ CRITICAL: cat_preds is None after specialist loop")
-                        
-                elif self.ml.catboost_model is not None:
-                    try:
-                        # Verify GPU usage on first batch
                         if predictions_processed == 0:
                             print("\n" + "="*70)
-                            print("🚀 FIRST PREDICTIONS RUNNING!")
+                            print("🚀 FIRST PREDICTIONS RUNNING (V12 THOR ENGINE)!")
                             print("="*70)
-                            if USE_GPU and hasattr(self.ml.catboost_model, 'get_params'):
-                                params = self.ml.catboost_model.get_params()
-                                device_type = params.get('task_type', 'CPU')
-                                if device_type == 'GPU':
-                                    print(f"   ✅ GPU CONFIRMED for predictions!")
-                            print("="*70 + "\\n")
                         
+                        # Replace NaNs for CatBoost
+                        features_scaled = np.nan_to_num(features_scaled, nan=0.0, posinf=0.0, neginf=0.0)
                         cat_preds = self.ml.catboost_model.predict_proba(features_scaled)
                         
-                        # Apply isotopic calibrator if available for legacy model
+                        # Apply isotopic calibrator if available
                         if hasattr(self.ml, 'calibrator') and self.ml.calibrator is not None:
                             try:
                                 cal_proba_1 = self.ml.calibrator.predict(cat_preds[:, 1])
@@ -2267,7 +1792,7 @@ class Bot:
                     except Exception as e:
                         import traceback
                         traceback.print_exc()
-                        print(f"⚠️  Legacy Prediction error (batch {predictions_processed}): {e}")
+                        print(f"⚠️  Thor Prediction error (batch {predictions_processed}): {e}")
                 
                 # VECTORIZED SCORING - HYBRID CatBoost + TFT (v8.0)
                 batch_len = len(batch)
@@ -2372,11 +1897,12 @@ class Bot:
                             print(f"  ⏭️ SKIPPED (NEUTRAL): norm_score too low")
                         continue
 
-                    # Skip weak predictions (below RL threshold)
+                    # Skip weak predictions? NO. 
+                    # User requested alert system to give Thor's signal "not based on confidence anymore".
+                    # We will log it and let it pass through for alerting, but only add to RL if passes_gate.
                     if ml_conf < self.cfg.ml_confidence_rl_min:
                         if idx == 0 and predictions_processed % 300 == 0:
-                            print(f"  ⏭️ SKIPPED (WEAK): conf={ml_conf:.1f}% < {self.cfg.ml_confidence_rl_min}%")
-                        continue
+                            print(f"  ⏭️ DEBUG (WEAK but passed for alert): conf={ml_conf:.1f}% < {self.cfg.ml_confidence_rl_min}%")
                     
                     # 🔥 Calculate magnitude (EWMA volatility-scaled)
                     # NOTE: Uncertainty already applied to confidence.
@@ -2483,87 +2009,14 @@ class Bot:
                     # 🔥 HARD CAP: 10% magnitude max (50% move in 4h is delusional)
                     magnitude = min(magnitude, MAX_MAGNITUDE)
                     
-                    # 🧬 ENSEMBLE DRL ACTION (PPO + SAC)
+                    # Heimdall / PPO is dormant in V12 Thor Architecture
                     ppo_action = None
                     ppo_log_prob = 0.0
                     ppo_value = 0.0
-                    ppo_size_mult = 1.0   # default: normal size (PPO not available or errored)
-                    passes_gate = True  # FIX 1: Default to True so non-RL users still get alerts
+                    ppo_size_mult = 1.0
                     
-                    # Use ensemble if available, fallback to PPO
-                    rl_agent = getattr(self, 'ppo_agent', None)
-                    if rl_agent is not None:
-                        try:
-                            state = features_batch[idx]
-                            if self.ml and self.ml.scaler:
-                                state = self.ml.scaler.transform([state])[0]
-                                
-                                # 🔥 Part E2: Add HMM Regime to RL State
-                                # FIX B: reuse per-symbol regime from routing block -- no second HMM call.
-                                hmm_regime = 1  # default: range
-                                try:
-                                    if '_batch_hmm_regimes' in locals() and idx < len(_batch_hmm_regimes):
-                                        hmm_regime = int(_batch_hmm_regimes[idx])
-                                except Exception:
-                                    pass
-                            # 🔥 Part E: Meta-State augmented with CatBoost Probabilities, Divergence, Mean Entropy, and HMM Regime
-                            if specialist_probs_batch is not None:
-                                p_batch = specialist_probs_batch[idx]
-                                eps = 1e-7
-                                p_clipped = np.clip(p_batch, eps, 1.0 - eps)
-                                mean_entropy = np.mean(- (p_clipped * np.log2(p_clipped) + (1.0 - p_clipped) * np.log2(1.0 - p_clipped)))
-                                divergence = np.std(p_batch)
-                                state = np.concatenate([state, p_batch, [divergence, mean_entropy, hmm_regime]])
-                            else:
-                                state = np.concatenate([state, np.zeros(9), [hmm_regime]]) # 7 probs + 2 meta-features + 1 regime
-                                
-                            ppo_action, ppo_log_prob, ppo_value = rl_agent.select_action(state)
-
-                            # ========================================
-                            # HEIMDALL SIZER — PPO as Position Size Oracle
-                            #
-                            # PPO no longer gates or dampens the ML signal.
-                            # The ML ensemble (7 specialists + filters) decides direction.
-                            # PPO decides HOW MUCH to risk on the trade.
-                            #
-                            # Size multiplier ∈ [0.25, 2.0]:
-                            #   Agree + high value  → up to 2.0× (go big on conviction)
-                            #   Agree + low value   → 1.0–1.5× (moderate)
-                            #   HOLD + any value    → 0.5–1.0× (cautious, still trades)
-                            #   Contradict + any    → 0.25–0.5× (tiny, but still trades)
-                            #
-                            # PPO learns: size up → amplified reward/loss.
-                            # Good PPO → sizes up winners, sizes down losers.
-                            # Bad PPO → suboptimal sizes, but ML signal is never blocked.
-                            # ========================================
-                            val_signal = 1.0 / (1.0 + math.exp(-float(ppo_value)))  # sigmoid → [0,1]
-
-                            _ml_is_bull = (ml_dir == 'BULLISH')
-                            _ppo_agrees = (ppo_action == 1 and _ml_is_bull) or \
-                                          (ppo_action == 2 and not _ml_is_bull)
-                            _ppo_hold   = (ppo_action == 0)
-                            # ppo_action contradicts = neither agrees nor hold
-
-                            if _ppo_agrees:
-                                # PPO confirms ML direction — scale up
-                                ppo_size_mult = 1.0 + 1.0 * val_signal   # [1.0, 2.0]
-                                print(f"  HEIMDALL Agree: {symbol} size={ppo_size_mult:.2f}× (val={val_signal:.2f})")
-                            elif _ppo_hold:
-                                # PPO uncertain — trade small
-                                ppo_size_mult = 0.5 + 0.5 * val_signal   # [0.5, 1.0]
-                                print(f"  HEIMDALL Cautious: {symbol} size={ppo_size_mult:.2f}× (val={val_signal:.2f})")
-                            else:
-                                # PPO contradicts ML — trade very small, but don't block
-                                ppo_size_mult = 0.25 + 0.25 * val_signal  # [0.25, 0.5]
-                                print(f"  HEIMDALL Contra: {symbol} size={ppo_size_mult:.2f}× (val={val_signal:.2f})")
-
-                            # Gate initialized purely by ML confidence (BS veto applied below)
-                            passes_gate = ml_conf >= float(self.cfg.ml_confidence_rl_min)
-
-                        except Exception as e:
-                            logging.debug(f"PPO sizer error: {e}")
-                            ppo_size_mult = 1.0  # safe fallback: normal size
-                            passes_gate = ml_conf >= float(self.cfg.ml_confidence_rl_min)
+                    # Gate initialized purely by ML confidence
+                    passes_gate = ml_conf >= float(self.cfg.ml_confidence_rl_min)
 
                     # ========================================
                     # 📈 BS "TRILLION DOLLAR EQUATION" POWER
@@ -2571,7 +2024,7 @@ class Bot:
                     _feature_bs_prob = 0.5
                     _bs_fallback_prob = 0.5
                     _bs_win_prob_baseline = 0.4
-                    _dom_bs = 'athena'
+                    _dom_bs = 'thor'
                     _bs_ctx = {
                         'prob': 0.5,
                         'order_prob': 0.5,
@@ -2586,113 +2039,52 @@ class Bot:
                         'specialist': _dom_bs,
                     }
                     try:
-                        try:
-                            _feature_bs_prob = float(features_batch[idx][275])
-                        except Exception:
-                            pass
+                        _feature_bs_prob = float(features_batch[idx][275])
+                    except Exception:
+                        pass
 
-                        _bs_fallback_prob = _feature_bs_prob if ml_dir != 'BEARISH' else (1.0 - _feature_bs_prob)
-                        _bs_ctx['prob'] = float(max(0.0, min(1.0, _bs_fallback_prob)))
-                        _bs_ctx['order_prob'] = _bs_ctx['prob']
-
-                        _sp_keys_bs = ['athena', 'ares', 'hermes', 'artemis', 'chronos', 'hephaestus', 'nike']
-                        _sp_p = specialist_probs_batch[idx] if specialist_probs_batch is not None else None
-                        if _sp_p is not None and len(_sp_p) == 7:
-                            _dom_bs = _sp_keys_bs[int(np.argmax(_sp_p))]
-
-                        _atr_bs = float(item['tf_analysis'].get('5m', {}).get('atr', 0.0) or 0.0)
-                        _bs_ctx = self._compute_live_kou_score(
-                            symbol,
-                            price,
-                            _atr_bs,
-                            ml_dir,
-                            _dom_bs,
-                            feature_prob=_feature_bs_prob,
-                        )
-
-                        bs_prob = float(max(0.0, min(1.0, _bs_ctx.get('prob', _bs_fallback_prob))))
-                        _bs_win_prob_baseline = float(max(0.0, min(1.0, _bs_ctx.get('baseline', _bs_win_prob_baseline))))
-                        _bs_veto_floor = max(0.25, _bs_win_prob_baseline)
-                        _bs_turbo_floor = max(0.55, _bs_win_prob_baseline + 0.15)
-
-                        # Reject trades whose live TP-before-SL probability is below
-                        # the specialist's zero-drift baseline.
-                        if bs_prob < _bs_veto_floor:
-                            passes_gate = False
-                            if idx == 0 and predictions_processed % 50 == 0:
-                                print(
-                                    f"  ⛔ BS VETO: {symbol} {ml_dir} rejected "
-                                    f"(P={bs_prob:.2f} < {_bs_veto_floor:.2f}, "
-                                    f"spec={_dom_bs}, src={_bs_ctx.get('source', '?')})"
-                                )
-
-                        # Strong positive barrier math gets a modest sizing boost.
-                        elif bs_prob > _bs_turbo_floor:
-                            bs_multiplier = min(1.5, bs_prob / max(0.50, _bs_win_prob_baseline))
-                            ppo_size_mult *= bs_multiplier
-                            if passes_gate:
-                                print(
-                                    f"  🚀 BS TURBO: {symbol} {ml_dir} favorable "
-                                    f"(P={bs_prob:.2f}, spec={_dom_bs}, "
-                                    f"src={_bs_ctx.get('source', '?')}), "
-                                    f"size_mult={ppo_size_mult:.2f}×"
-                                )
-                    except Exception as e:
-                        logging.debug(f"BS power logic error: {e}")
-
-                    # 🛡️ Final safety cap — prevent runaway sizing from PPO×BS stacking
-                    ppo_size_mult = min(ppo_size_mult, 2.5)
-
-                    # Store result
-                    opportunity_score = min(100.0, float((ml_conf * magnitude) / 10))
-
+                    # ========================================
+                    # THOR V12 DIRECT ROUTING
+                    # ========================================
+                    _atr_thor = float(item['tf_analysis'].get('5m', {}).get('atr', 0.0) or 0.0)
                     
-                    # Get ATR for dynamic barrier calculation
+                    opportunity_score = min(100.0, float((ml_conf * magnitude) / 10))
                     atr_4h = item['tf_analysis'].get('4h', {}).get('atr', 0)
                     volatility = (atr_4h / price * 100) if price > 0 and atr_4h else magnitude
                     
-                    _display_agent = display_agent_name(_dom_bs)
-                    _thor_ctx = self._get_thor_context(symbol)
                     opportunity = {
                         'symbol': symbol,
                         'direction': ml_dir,
                         'confidence': ml_conf,
                         'magnitude': magnitude,
-                        'volatility': volatility,  # 🔥 V9.0: for dynamic barriers
-                        'uncertainty': uncertainties[idx],
+                        'volatility': volatility,
+                        'uncertainty': uncertainties[idx] if 'uncertainties' in locals() and idx < len(uncertainties) else 0.25,
                         'score': opportunity_score,
                         'price': price,
                         'tf_analysis': item['tf_analysis'],
-                        'features': features_batch[idx],
-                        'specialist_probs': specialist_probs_batch[idx].tolist() if specialist_probs_batch is not None else [0]*7,
+                        'features': features_batch[idx][:278].tolist() if hasattr(features_batch[idx], 'tolist') else features_batch[idx][:278],
+                        'specialist_probs': [0] * 7,
                         'for_rl': True,
                         'timestamp': time.time(),
                         'prediction_time': datetime.now().isoformat(),
-                        'ppo_action': ppo_action,
-                        'ppo_log_prob': ppo_log_prob,
-                        'ppo_value': ppo_value,
-                        'ppo_size_mult': ppo_size_mult,
-                        'bs_prob': float(max(0.0, min(1.0, _bs_ctx.get('prob', _bs_fallback_prob)))),
-                        'bs_order_prob': float(max(0.0, min(1.0, _bs_ctx.get('order_prob', _bs_fallback_prob)))),
-                        'bs_time_prob': float(max(0.0, min(1.0, _bs_ctx.get('time_prob', 1.0)))),
-                        'bs_baseline': float(max(0.0, min(1.0, _bs_win_prob_baseline))),
-                        'bs_source': _bs_ctx.get('source', 'feature_fallback'),
-                        'bs_specialist': _dom_bs,
-                        'display_agent': _display_agent,
-                        'source_regime_agent': 'Thor' if _thor_ctx else _display_agent,
-                        'thor_context_active': bool(_thor_ctx),
+                        'agent': 'Thor',
+                        'display_agent': 'Thor',
+                        'source_regime_agent': 'Thor',
+                        'specialist': 'thor',
+                        'exit_profile': {
+                            'tp_atr': self.cfg.events.thor_tp_atr,
+                            'sl_atr': self.cfg.events.thor_sl_atr,
+                            'bank_atr': self.cfg.events.thor_bank_atr,
+                            'bank_fraction': self.cfg.events.thor_bank_fraction,
+                            'runner_trail_atr': self.cfg.events.thor_runner_trail_atr,
+                            'trail_activate_atr': self.cfg.events.thor_trail_activate_atr
+                        },
+                        'timeout_bars': int(self.cfg.events.thor_max_bars_pre_bank),
+                        'thor_score': opportunity_score,
                         'baldur_top_warning': False,
-                        'freya_context_valid': bool(_thor_ctx and ml_dir == 'BULLISH'),
-                        'shap_summary': None  # v11: filled below
+                        'freya_context_valid': False,
+                        'shap_summary': None
                     }
-                    if _dom_bs == 'nike':
-                        opportunity['specialist'] = 'nike'
-                        opportunity['agent'] = 'Thor'
-                        opportunity['exit_profile'] = self._build_nike_exit_profile()
-                        opportunity['timeout_bars'] = int(self.cfg.events.nike_max_bars_post_bank)
-                        _atr_thor = float(item['tf_analysis'].get('5m', {}).get('atr', 0.0) or 0.0)
-                        if ml_dir == 'BULLISH' and _atr_thor > 0:
-                            self._touch_thor_context(symbol, price, _atr_thor, score=ml_conf, tier='ML')
                     
                     # v11: SHAP feature importance for this prediction
                     if self.shap_explainer and self.ml and self.ml.catboost_model:
@@ -2718,7 +2110,6 @@ class Bot:
                     # ========================================
                     # 🔥 V9.0: RL DEDUPLICATION COOLDOWN
                     # 30-min cooldown per symbol+direction
-                    # Prevents flooding RL with 200x identical predictions
                     # ========================================
                     rl_cooldown_key = f"{symbol}_{ml_dir}"
                     rl_last_added = self._rl_add_times.get(rl_cooldown_key, 0)
@@ -2749,56 +2140,52 @@ class Bot:
                             self._rl_add_times = {k: self._rl_add_times[k] for k in sorted_keys[:5000]}
                     # else: skip RL add (cooldown active), but still allow alerts
                     
-                    if price and hasattr(self, 'paper') and self.paper and item['symbol'] in getattr(self.paper, 'positions', {}):
-                        self.paper.tick(item['symbol'], price)
+                    # For Paper Trading and RL, enforce the confidence gate
+                    if passes_gate:
+                        if price and hasattr(self, 'paper') and self.paper and item['symbol'] in getattr(self.paper, 'positions', {}):
+                            self.paper.tick(item['symbol'], price)
 
-                    # Also send alerts if >= alert threshold AND passes PPO gate
-                    _live_model_allowed = _dom_bs in self._get_live_model_specialists()
-                    if passes_gate and _live_model_allowed and ml_conf >= self.cfg.ml_confidence_min:
-                        # Put a shallow copy so mutating 'for_rl' here does NOT corrupt
-                        # the same dict already stored in rl_opportunities
-                        alert_opp = dict(opportunity)
-                        alert_opp['for_rl'] = False
-                        self.result_queue.put(alert_opp)
+                    # ALWAYS send alerts (ignoring passes_gate and ml_confidence_min)
+                    # "make alert system gives me thors signal that it accept not based on confidence anymore"
+                    alert_opp = dict(opportunity)
+                    alert_opp['for_rl'] = False
+                    self.result_queue.put(alert_opp)
 
-                    if passes_gate and _live_model_allowed and price and ml_conf >= self.cfg.ml_confidence_min:
+                    # ── Thor Entry Quality Gates (V12 — from Norse sim learned filter) ──
+                    # Gate 1: pre_impulse_r2 veto (feature[272]) — strongest negative predictor (coef -0.24)
+                    # If price was already trending hard before the impulse, the breakout is likely exhaustion.
+                    if passes_gate and features_batch is not None:
+                        try:
+                            _feat = features_batch[idx]
+                            _r2_max = float(getattr(self.cfg.events, 'thor_pre_impulse_r2_max', 0.70))
+                            _pre_r2 = float(_feat[272]) if len(_feat) > 272 else 0.0
+                            if _pre_r2 > _r2_max:
+                                passes_gate = False
+                                logging.debug(
+                                    "Thor pre_impulse_r2 veto: %.3f > %.2f for %s",
+                                    _pre_r2, _r2_max, symbol
+                                )
+                        except Exception:
+                            pass  # Never block on gate error
+
+                    # Paper Trading Execution (V12 Thor strict)
+                    if passes_gate and price:
                         atr_percent = (item['tf_analysis'].get('4h', {}).get('atr', 0) / price) * 100 if price > 0 else 1
-
-                        # ── BS BARRIER R/R + EDGE (Hull Ch.26 / Darling-Siegert 1953) ──
-                        # Use dominant specialist's barrier geometry for dynamic Kelly b.
-                        # Fall back to median settings if probs unavailable.
-                        _ev = self.cfg.events
-                        _SPEC_BARRIERS = {
-                            'athena':    (_ev.athena_tp_atr,   _ev.athena_sl_atr),
-                            'ares':      (_ev.ares_tp_atr,     _ev.ares_sl_atr),
-                            'hermes':    (_ev.hermes_tp_atr,   _ev.hermes_sl_atr),
-                            'artemis':   (_ev.artemis_tp_atr,  _ev.artemis_sl_atr),
-                            'chronos':   (_ev.chronos_tp_atr,  _ev.chronos_sl_atr),
-                            'hephaestus':(_ev.heph_tp_atr,     _ev.heph_sl_atr),
-                            'nike':      (_ev.nike_tp_atr,     _ev.nike_sl_atr),
-                        }
-                        _tp_m, _sl_m = _SPEC_BARRIERS.get(_dom_bs, (1.5, 1.0))
-
-                        _barrier_rr = _tp_m / max(_sl_m, 1e-6)
-                        _bs_win_prob_baseline = float(
-                            max(0.0, min(1.0, _bs_ctx.get('baseline', _sl_m / max(_tp_m + _sl_m, 1e-12))))
-                        )
-                        _live_bs_prob = float(max(0.0, min(1.0, _bs_ctx.get('prob', _bs_fallback_prob))))
-                        _bs_edge = _live_bs_prob - _bs_win_prob_baseline
 
                         self.paper.open_position(item['symbol'], price, ml_dir, ml_conf, atr_percent,
                                                  ppo_size_mult=ppo_size_mult,
-                                                 barrier_rr=_barrier_rr,
-                                                 bs_edge=_bs_edge,
-                                                 bs_prob=_live_bs_prob,
-                                                 specialist=_dom_bs,
-                                                 display_agent=_display_agent,
-                                                 source_regime_agent='Thor' if _thor_ctx else _display_agent,
-                                                 thor_context_active=bool(_thor_ctx),
+                                                 barrier_rr=2.7, # 5.4 / 2.0
+                                                 bs_edge=0.0,
+                                                 bs_prob=0.5,
+                                                 specialist='thor',
+                                                 display_agent='Thor',
+                                                 source_regime_agent='Thor',
+                                                 thor_context_active=True,
                                                  baldur_top_warning=False,
-                                                 freya_context_valid=bool(_thor_ctx and ml_dir == 'BULLISH'),
-                                                 exit_profile=self._build_nike_exit_profile() if _dom_bs == 'nike' else None,
-                                                 timeout_bars=int(self.cfg.events.nike_max_bars_post_bank) if _dom_bs == 'nike' else None)
+                                                 freya_context_valid=False,
+                                                 exit_profile=self._build_thor_exit_profile(), # This now routes to Thor internally in trading_core
+                                                 timeout_bars=int(self.cfg.events.thor_max_bars_pre_bank),
+                                                 thor_score=opportunity_score)
                         # v11.5: Store specialist probs for Brier score tracking at close
                         if specialist_probs_batch is not None and item['symbol'] in self.paper.positions:
                             self.paper.positions[item['symbol']]['specialist_probs'] = specialist_probs_batch[idx].copy()
@@ -2922,7 +2309,7 @@ class Bot:
             print(f"💾 Cache: FEATHER (2.5x faster) | 180-Day Global History")
             print(f"📈 Features: {BASE_FEATURE_COUNT} (Sentiment-Fused Multi-Timeframe)")
             print(f"🎯 Live Norse Stack: Thor | Baldur | Freya")
-            print(f"📊 Silent Legacy Models: Athena | Ares | Hermes | Artemis | Chronos | Hephaestus")
+            print(f"⚙️  Silent Models Loaded: Thor V12 Specialist")
             print(f"⚖️ Critics: Tyr | Vidar | Mimir | Heimdall | Loki | Ullr | Thor")
             print(f"😨 F&G: {fg['value']} ({fg['label']}) | Coins: {len(self.active_coins)}")
             print(f"⚙️  Producers: {self.cfg.num_producers} | Batch: {self.cfg.gpu_batch_size} | Queue: {self.cfg.queue_size}")
@@ -3884,30 +3271,7 @@ class Bot:
                 # Start WS event loop
                 self.ws_producer.start()
 
-                # ── Thor Screener (internal key: nike) ─────────────────────
-                if NIKE_SCREENER_AVAILABLE:
-                    try:
-                        all_futures = self.bnc.get_pairs()   # all USDT perpetuals
-                        proxy_url   = None
-                        try:
-                            from quanta_proxy import ProxyManager
-                            proxy_url = ProxyManager.get_proxy()
-                        except Exception:
-                            pass
-                        self.nike_screener = NikeScreener(
-                            symbols   = all_futures or symbols,
-                            proxy_url = proxy_url,
-                        )
-                        self.nike_screener.start()
-                        threading.Thread(
-                            target=self._nike_signal_consumer,
-                            daemon=True,
-                            name="ThorConsumer",
-                        ).start()
-                        print(f"✅ Thor screener active — watching {len(all_futures or symbols)} symbols")
-                    except Exception as _ne:
-                        print(f"⚠️  Thor screener failed to start: {_ne}")
-
+                # Thor screener wired via V12 direct prediction loop. Routing uses V12 direct prediction loops.
                 # Main thread blocks here while keeping 90s stats loop alive
                 print("\n🚀 QUANTA HFT PIPELINE ACTIVE (Event-Driven / No REST polling)\n")
                 

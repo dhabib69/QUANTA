@@ -4,9 +4,11 @@ description: Who Habib is, his technical level, preferences, and working style
 type: user
 ---
 
-Habib Khairul — builder of QUANTA trading bot.
+Habib Khairul — builder of QUANTA trading bot. Indonesian national, UTC+8.
 
-**Technical level:** Strong Python developer, comfortable with ML/quant concepts. Understands CatBoost, Triple Barrier, Kelly sizing, thread safety. Not a quant by training but has researched deeply. Uses Windows 11 UTC+8 (Malaysia).
+**Technical level:** Strong Python developer, comfortable with ML/quant concepts. Understands CatBoost, Triple Barrier, Kelly sizing, thread safety. Not a quant by training but has researched deeply. Uses Windows 11 UTC+8 (Indonesia).
+
+**Education:** Associate Degree in Electrical Engineering. Pursuing Bachelor + Master's in Australia (target 2027 intake). Eligible for Australia Awards Indonesia (australiaawardsindonesia.org) — Indonesia is a priority country with large annual allocation.
 
 **Hardware:** MX130 GPU (2GB VRAM) — this constrains GPU_MAX_SAMPLES=10000 and TFT sequence caps. Important to respect when suggesting changes.
 

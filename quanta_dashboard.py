@@ -288,10 +288,16 @@ def _get_predictions():
             elif isinstance(sp, list): sp = [float(x) for x in sp]
             
             pa = p.get('ppo_action')
-            if pa is not None: pa = int(pa)
-            
+            try:
+                if pa is not None: pa = int(pa)
+            except (ValueError, TypeError):
+                pa = None
+
             pm = p.get('ppo_size_mult')
-            if pm is not None: pm = float(pm)
+            try:
+                if pm is not None: pm = float(pm)
+            except (ValueError, TypeError):
+                pm = None
 
             picks_list.append({
                 'symbol': p.get('symbol', '?'),
@@ -321,10 +327,16 @@ def _get_predictions():
             elif isinstance(sp, list): sp = [float(x) for x in sp]
             
             pa = p.get('ppo_action')
-            if pa is not None: pa = int(pa)
-            
+            try:
+                if pa is not None: pa = int(pa)
+            except (ValueError, TypeError):
+                pa = None
+
             pm = p.get('ppo_size_mult')
-            if pm is not None: pm = float(pm)
+            try:
+                if pm is not None: pm = float(pm)
+            except (ValueError, TypeError):
+                pm = None
             
             recent_preds.append({
                 'symbol': p.get('symbol', '?'),

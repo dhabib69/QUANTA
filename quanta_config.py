@@ -126,6 +126,9 @@ class RLConfig:
     catastrophic_forgetting_buffer_ratio: float = 0.8
     memory_max_size: int = 10000
     
+    # PPO Heimdall is dormant in V12 Thor Architecture
+    rl_enabled: bool = False
+    
     # Network Arch
     hidden_dim: int = 256
     lr: float = 2.5e-5
@@ -207,223 +210,13 @@ class EventExtractionConfig:
     tp_weight: float = 1.0
     sl_weight: float = 1.5       # SL samples weighted 1.5× to combat imbalanced label skew
 
-    # ── Athena: Breakout Continuation (Long) ──
-    # CUSUM threshold: h ≈ 2σ to detect strong regime change.
-    # López de Prado AFML Ch.2 §2.5.2.1: "Set h to the asset's daily vol"
-    # 2× for Athena = require strong momentum confirmation before entry.
-    athena_cusum_mult: float = 1.0   # Lowered from 2.0 — capture more breakout candidates
-    athena_cusum_floor: float = 0.01
-    athena_tp_atr: float = 1.5   # 1.5:1 reward:risk (Kaufman 2013 "Trading Systems")
-    athena_sl_atr: float = 1.0
-    athena_max_bars: int = 48    # 4h @ 5m (López de Prado: vertical barrier = expected bet duration)
-
-    # ── Ares: Short / Downtrend ──
-    # CUSUM threshold: h ≈ 1σ for higher sensitivity to detect nascent selloffs.
-    # López de Prado AFML Ch.2: threshold proportional to asset vol.
-    # Lower mult because short setups are rarer and need more sensitivity.
-    ares_cusum_mult: float = 0.8    # Raised from 0.4 — focus on high-quality dumps
-    ares_cusum_floor: float = 0.005  # Raised from 0.003
-    ares_tp_atr: float = 1.5
-    ares_sl_atr: float = 1.0
-    ares_max_bars: int = 48      # 4h: shorts in crypto resolve slower (Makarov & Schoar 2020)
-
-    # ── Hermes: Range-Bound Mean Reversion ──
-    # Range filter: price_range < 3.5×ATR over lookback = consolidation.
-    # Bollinger (2001): BandWidth < 75% of 20-period average = squeeze.
-    # 3.5× ATR_pct over 50 bars ≈ Bollinger BW squeeze threshold.
-    hermes_range_mult: float = 3.5
-    hermes_range_floor: float = 0.05
-    hermes_buy_zone: float = 0.2        # Bottom 20% of range (support bounce)
-    hermes_sell_zone: float = 0.8       # Top 80% of range (resistance rejection)
-    hermes_tp_atr: float = 1.0          # Tight TP for range trades
-    hermes_sl_atr: float = 0.8          # Tight SL — range invalidation = quick exit
-    hermes_max_bars: int = 48            # 4h
-
-    # ── Artemis: Stealth Volume Accumulation (Repurposed v11.5b) ──
-    # CUSUM + volume surge WITHOUT price at new high = hidden accumulation.
-    # Easley, López de Prado & O'Hara (2012) "Flow Toxicity":
-    # VPIN uses 1.4-1.6× relative volume for informed trading detection.
-    # Distinct from Athena (needs new high) and Nike (no CUSUM).
-    artemis_cusum_mult: float = 0.4
-    artemis_cusum_floor: float = 0.004
-    artemis_vol_surge_mult: float = 1.05
-    artemis_tp_atr: float = 2.0          # Wide TP for stealth breakout runners
-    artemis_sl_atr: float = 1.0
-    artemis_max_bars: int = 48           # 4h
-
-    # ── Chronos: Mean Reversion from Extremes ──
-    # CUSUM: 2× for significant oversold/overbought. Lookback 14 = RSI period.
-    # Wilder (1978): RSI 14-period is the canonical mean-reversion window.
-    chronos_lookback: int = 14
-    chronos_cusum_mult: float = 2.0
-    chronos_cusum_floor: float = 0.02
-    chronos_tp_atr: float = 1.5
-    chronos_sl_atr: float = 1.2          # Wider SL for reversal trades (higher risk)
-    chronos_max_bars: int = 48           # 4h
-
-    # ── Hephaestus: Support/Resistance Bounce ──
-    # 200-bar window for S/R detection.
-    # Murphy (1999) "Technical Analysis": S/R levels from 200-period lookback
-    # are the most reliable in equity/commodity/crypto markets.
-    # Percentile 5/95 for S/R = exclude tails (Mandelbrot 1963 fat-tail correction).
-    heph_window: int = 200
-    heph_support_pctl: float = 5.0
-    heph_resist_pctl: float = 95.0
-    heph_tolerance_mult: float = 2.5     # Price within 2.5× ATR of level = "near"
-    heph_tolerance_floor: float = 0.01
-    heph_tp_atr: float = 1.2
-    heph_sl_atr: float = 0.8
-    heph_max_bars: int = 48              # 4h
-
-    # ── Nike: Anomalous First Candle Breakout (v11.7) ──
-    # Catches the first anomalous candle that kicks off a new pump run.
-    # Based on empirical analysis of 87,669 breakout events:
-    #   - Prior consolidation avg body: ~0.36% per bar
-    #   - Anomalous candle body: 5.6× avg prior body on average
-    #   - Volume spike: ~5.8× 20-bar avg
-    #   - Median run-up to actual top: +1.39%, avg +2.70%
-    #   - Median time to top: 12 bars = 60 min
-    # Trigger architecture (v12.0):
-    #   1. Setup candle: quiet-base bullish anomaly with moderate volume/body thresholds
-    #   2. Immediate entry if the setup candle is already extreme
-    #   3. Otherwise wait one bar for confirmation:
-    #        - next low holds above the setup midpoint
-    #        - next close stays above the setup close
-    #        - next high breaks the setup high
-    #   4. Aggressive continuation tier:
-    #        - setup bar still meets the relaxed anomaly rule
-    #        - first follow-through bar keeps the setup midpoint intact
-    #        - second follow-through bar closes above setup close and breaks setup high
-    #        - entry bar volume must not collapse below 1.0x its 20-bar average
-    # This matches the "ignition -> confirm -> acceleration" pattern seen in
-    # SWARMS / JOE / BULLA-style expansions.
-    nike_body_min: float = 0.4           # Setup body efficiency |C-O|/(H-L) — allow broader ignition candles
-    nike_body_ratio_mult: float = 5.0    # Setup body > 5× avg body — tuned to cache spike events
-    nike_body_lookback: int = 20         # Bars to compute avg body for anomaly detection
-    nike_quiet_body_pct: float = 0.5     # Prior avg body must be < 0.5% of price (quiet regime)
-    nike_vol_mult: float = 1.5           # Setup volume > 1.5× SMA(vol, 20) — catches ignition earlier
-    nike_immediate_body_ratio_mult: float = 8.0   # Same-bar entry only if the setup candle is clearly explosive
-    nike_immediate_body_min: float = 0.55         # Same-bar entry still requires a cleaner body
-    nike_immediate_vol_mult: float = 2.0          # Same-bar entry keeps stronger volume confirmation
-    nike_continuation_vol_mult: float = 1.0       # Tier-C continuation rejects entries when volume collapses
-    nike_score_body_ratio_weight: float = 0.30
-    nike_score_vol_ratio_weight: float = 0.25
-    nike_score_body_eff_weight: float = 0.20
-    nike_score_quiet_weight: float = 0.10
-    nike_score_confirm_weight: float = 0.15
-    nike_tier_a_confidence: float = 84.0
-    nike_tier_b_confidence: float = 78.0
-    nike_tier_c_confidence: float = 72.0
-    nike_tier_a_size_mult: float = 1.15
-    nike_tier_b_size_mult: float = 1.00
-    nike_tier_c_size_mult: float = 0.75
-    nike_tier_b_bs_floor: float = 0.30
-    nike_tier_c_bs_floor: float = 0.35
-    nike_tier_a_live: bool = True
-    nike_tier_b_live: bool = False
-    nike_tier_c_live: bool = False
-    nike_tp_atr: float = 2.0             # TP: 2× ATR — median run-up is +1.4%, mean +2.7%
-    nike_sl_atr: float = 0.8             # Tight SL — if no follow-through, exit fast
-    nike_max_bars: int = 24              # Legacy single-timeout; kept aligned with pre-bank window
-    nike_bank_atr: float = 2.0           # Bank partial profits at +2 ATR
-    nike_bank_fraction: float = 0.50     # Close half, keep half for runner mode
-    nike_runner_trail_atr: float = 1.5   # Runner trail after banking profits
-    nike_max_bars_pre_bank: int = 24     # Hard timeout if no bank by 2h
-    nike_max_bars_post_bank: int = 36    # Hard close the runner after 3h
-
-    # -- Norse live operating mode --
-    # Keep internal keys unchanged; only user-facing names are renamed.
-    model_live_specialists: str = "nike"  # only these internal model specialists may execute live
-    thor_context_bars: int = 24
-    thor_context_min_score: float = 72.0
-    baldur_live: bool = False
-    freya_live: bool = False
-
-    # -- Norse portfolio simulation / future live sizing --
-    # Reverting to validated stable baseline
-    thor_risk_pct: float = 0.005
-    thor_max_leverage: float = 5.0
-    thor_capital_cap: float = 0.50
-    thor_tp_atr: float = 2.5
-    # Tuned via Optuna (2026-04-13) +979.28% yield parameters
-    thor_sl_atr: float = 2.40
-    thor_bank_atr: float = 5.40
-    thor_bank_fraction: float = 0.45
-    thor_runner_trail_atr: float = 4.00
-    thor_trail_activate_atr: float = 1.50
-    thor_max_bars_pre_bank: int = 144
-    thor_max_bars_post_bank: int = 1152
-    thor_min_score_trade: float = 64.0
-    thor_trade_tiers: str = "A,B,C"
-    thor_trade_cooldown_bars: int = 36
-    thor_max_concurrent_positions: int = 3
-    thor_feature_score_min: float = 74.0
-    thor_mae_veto_atr: float = 7.60
-    thor_wave_strength_min: float = 45.0
-    thor_top_risk_max: float = 80.0
-    # Hour-of-day gate: empty = no filter; "14" = hour-14 UTC only; "13,14,15" = window
-    thor_entry_hour_utc: str = ""
-
-    # -- Baldur: Thor-linked bearish top-start detector --
-    baldur_min_runup_atr: float = 1.0
-    baldur_upper_wick_min: float = 0.25
-    baldur_close_pos_max: float = 0.40
-    baldur_confirm_drop_pct: float = 0.25
-    baldur_risk_pct: float = 0.010
-    baldur_max_leverage: float = 4.0
-    baldur_capital_cap: float = 0.25
-    baldur_tp_atr: float = 1.5
-    baldur_sl_atr: float = 0.9
-    baldur_max_bars: int = 12
-    baldur_min_score_trade: float = 78.0
-    baldur_min_runup_trade_atr: float = 3.5
-    baldur_min_upper_wick_trade: float = 0.55
-    baldur_max_concurrent_positions: int = 1
-    baldur_top_risk_min: float = 72.0
-    baldur_warning_exit_score: float = 40.0
-
-    # -- Freya: Thor-linked short-horizon momentum scalp --
-    freya_momentum_pct: float = 0.10
-    freya_body_eff_min: float = 0.35
-    freya_vol_mult: float = 0.70
-    freya_cooldown_bars: int = 8
-    freya_risk_pct: float = 0.0020
-    freya_max_leverage: float = 3.0
-    freya_capital_cap: float = 0.25
-    freya_tp_atr: float = 1.2
-    freya_sl_atr: float = 0.6
-    freya_max_bars: int = 8
-    freya_min_score_trade: float = 50.0
-    freya_max_concurrent_positions: int = 1
-    freya_thor_score_min: float = 60.0
-    freya_allow_tier_c: bool = False
-    freya_min_wait_bars: int = 2
-    freya_min_runup_atr: float = 0.6
-    freya_pullback_min_atr: float = 0.15
-    freya_pullback_max_atr: float = 1.25
-    freya_pullback_floor_atr: float = 0.10
-    freya_min_reclaim_atr: float = -0.05
-    freya_max_extension_atr: float = 0.35
-    freya_max_peak_gap_atr: float = 0.75
-    freya_peak_gap_chase_floor_atr: float = 0.02
-    freya_chase_vol_max: float = 1.50
-    freya_chase_move_max: float = 0.40
-    freya_upper_wick_max: float = 0.30
-    freya_close_pos_min: float = 0.60
-    freya_min_quote_vol20: float = 20000.0
-    freya_wave_score_min: float = 72.0
-    freya_baldur_block_threshold: float = 70.0
-    freya_pyramid_add_notional_fraction: float = 0.50
-    freya_pyramid_add_trigger_wave: float = 25.0
-    freya_pyramid_add_top_risk_max: float = 60.0
-
-    # -- Feature-aware Norse simulation controls --
+    # ── Feature-aware Norse simulation controls ──
     pump_material_drawdown_atr: float = 1.0
     stop_market_penetration_factor: float = 0.20
     stop_market_slip_atr_cap: float = 0.25
     norse_drawdown_penalty_weight: float = 1.5
 
-    # -- Compound Growth Engine (Asymmetric Target Mode - 2026-04-12) --
+    # ── Compound Growth Engine (Asymmetric Target Mode - 2026-04-12) ──
     # Re-engineered: Target exactly 10% equity gain on confirmed pump wins,
     # hard-capped at 2-3% equity loss on stops. Compounding happens naturally
     # because 10% of a glowing equity base is a larger notional size.
@@ -443,6 +236,138 @@ class EventExtractionConfig:
     liq_cascade_size_boost: float = 1.25     # Position boost when cascade target exists
     liq_max_target_dist_pct: float = 15.0   # Don't target clusters >15% away
     liq_min_oi_vol_ratio: float = 1.5        # OI/volume ratio for meaningful cluster
+
+    # ── Thor Signal Detection Parameters (V12 — single active specialist) ──
+    thor_body_min: float = 0.55              # Min body efficiency (body/range)
+    thor_body_ratio_mult: float = 1.8        # Body must be 1.8x avg body
+    thor_body_lookback: int = 20             # Bars to compute avg body
+    thor_quiet_body_pct: float = 1.5         # Max avg body as % of price (quiet market filter)
+    thor_vol_mult: float = 1.5               # Volume must be 1.5x avg volume
+    thor_immediate_body_min: float = 0.65    # Tier A: stricter body efficiency
+    thor_immediate_body_ratio_mult: float = 2.2  # Tier A: stricter body ratio
+    thor_immediate_vol_mult: float = 2.0     # Tier A: stricter volume
+    thor_continuation_vol_mult: float = 1.2  # Tier C: continuation volume
+
+    # ── Thor Exit / Position Parameters ──
+    thor_tp_atr: float = 5.4                 # Bank trigger (early partial TP)
+    thor_sl_atr: float = 2.0                 # Stop-loss distance in ATR
+    thor_max_bars: int = 288                 # Max bars to hold (24h at 5m)
+    thor_max_bars_post_bank: int = 288       # Max bars after bank hit
+    thor_bank_atr: float = 5.4              # ATR distance to bank price
+    thor_bank_fraction: float = 0.5         # Fraction to close at bank
+    thor_runner_trail_atr: float = 6.0      # Chandelier trail width (ATR)
+    thor_trail_activate_atr: float = 5.4    # Activate trail after this run-up
+    thor_max_bars_pre_bank: int = 288       # Timeout before bank hit
+
+    # ── Thor Scoring Weights (signal quality decomposition) ──
+    thor_score_body_ratio_weight: float = 0.30  # Body/avg-body ratio contribution
+    thor_score_vol_ratio_weight:  float = 0.25  # Volume spike contribution
+    thor_score_body_eff_weight:   float = 0.20  # Body efficiency (body/range)
+    thor_score_quiet_weight:      float = 0.10  # Quiet-market filter contribution
+    thor_score_confirm_weight:    float = 0.15  # Confirmation bar contribution
+
+    # ── Thor Tier Thresholds (Tier A = immediate impulse, B = standard, C = continuation) ──
+    thor_tier_a_confidence: float = 84.0        # Score >= this → Tier A
+    thor_tier_b_confidence: float = 78.0        # Score >= this → Tier B
+    thor_tier_c_confidence: float = 72.0        # Score >= this → Tier C
+    thor_tier_a_size_mult:  float = 1.15        # Position size multiplier (Tier A)
+    thor_tier_b_size_mult:  float = 1.00        # Position size multiplier (Tier B)
+    thor_tier_c_size_mult:  float = 0.75        # Position size multiplier (Tier C)
+    thor_tier_b_bs_floor:   float = 0.30        # Tier B requires BS prob >= this
+    thor_tier_c_bs_floor:   float = 0.35        # Tier C requires BS prob >= this
+
+    # ── Thor Entry Quality Gates (wave_strength + pre_impulse_r2) ──
+    thor_wave_strength_min: float = 40.0    # Skip if wave_strength < this
+    thor_pre_impulse_r2_max: float = 0.70   # Skip if pre_impulse_r2 > this (linear moves fail)
+
+    # ── Thor Asymmetric Compounding ──
+    thor_compound_mode: str = "asymmetric_target"  # "flat" | "asymmetric_target"
+    thor_compound_activation_score: float = 85.0   # Score threshold to unlock 3% risk
+    thor_compound_max_loss_pct: float = 3.0         # Max risk % of equity at high conviction
+
+    # ── Thor MAE-Calibrated Exit Params (WF sim V12.3, overrides stale defaults above) ──
+    thor_sl_atr_calibrated: float = 3.00             # SL: P90 winner MAE (WF sim)
+    thor_bank_atr_calibrated: float = 4.20           # Bank: top MAE decision-matrix combo
+    thor_bank_fraction_calibrated: float = 0.35      # Bank fraction: top MAE combo
+    thor_runner_trail_atr_calibrated: float = 2.00   # Trail: tighter runner (WF sim)
+    thor_trail_activate_atr_calibrated: float = 1.50 # Trail only after 1.5 ATR above bank
+    thor_max_bars_pre_calibrated: int = 48           # Pre-bank base: 4h (overridden by Gompertz)
+    thor_max_bars_post_calibrated: int = 96          # Post-bank base: 8h (overridden by Gompertz)
+    thor_mae_veto_bars: int = 5                      # MAE veto window: first N bars
+    thor_mae_veto_atr: float = 3.62                  # MAE veto threshold: exit if adverse > this early
+
+    # ── Gompertz Hazard Model — Dynamic Exit Timing (Khairul's Identity λ companion) ──
+    # λ(t) = λ₀·e^(γt).  Optimal bank: t* = ln(n/λ₀)/γ  where n = λ(t*).
+    # Calibrated from WF micro-pump anchors (5-min bars, 245 symbols):
+    #   t₁=0.104d (30 bars, avg bank 4.20 ATR): n=λ(t₁)=0.700 → λ₀=0.517, γ=2.92
+    # Ref: memory/reference_journals.md — Khairul's Identity λ companion equation
+    thor_gompertz_n_prior: float = 0.700     # Prior micro-pump velocity day⁻¹
+    thor_gompertz_lambda0: float = 0.517     # λ₀: baseline collapse hazard day⁻¹
+    thor_gompertz_gamma: float = 2.92        # γ: hazard acceleration day⁻¹
+    thor_gompertz_k_pre: float = 1.5         # Pre-bank abort: λ(t)=k_pre·n
+    thor_gompertz_k_runner: float = 2.5      # Runner exit: λ(t)=k_runner·n
+    thor_gompertz_bank_min_atr: float = 2.0  # Floor: never bank below this ATR
+    thor_gompertz_bank_max_atr: float = 10.0 # Ceiling: cap dynamic bank ATR
+
+    # ── Backward-compatibility aliases (old nike_* names map here) ──
+    @property
+    def nike_body_min(self): return self.thor_body_min
+    @property
+    def nike_body_ratio_mult(self): return self.thor_body_ratio_mult
+    @property
+    def nike_body_lookback(self): return self.thor_body_lookback
+    @property
+    def nike_quiet_body_pct(self): return self.thor_quiet_body_pct
+    @property
+    def nike_vol_mult(self): return self.thor_vol_mult
+    @property
+    def nike_immediate_body_min(self): return self.thor_immediate_body_min
+    @property
+    def nike_immediate_body_ratio_mult(self): return self.thor_immediate_body_ratio_mult
+    @property
+    def nike_immediate_vol_mult(self): return self.thor_immediate_vol_mult
+    @property
+    def nike_continuation_vol_mult(self): return self.thor_continuation_vol_mult
+    @property
+    def nike_tp_atr(self): return self.thor_tp_atr
+    @property
+    def nike_sl_atr(self): return self.thor_sl_atr
+    @property
+    def nike_max_bars(self): return self.thor_max_bars
+    @property
+    def nike_max_bars_post_bank(self): return self.thor_max_bars_post_bank
+    @property
+    def nike_bank_atr(self): return self.thor_bank_atr
+    @property
+    def nike_bank_fraction(self): return self.thor_bank_fraction
+    @property
+    def nike_runner_trail_atr(self): return self.thor_runner_trail_atr
+    @property
+    def nike_score_body_ratio_weight(self): return self.thor_score_body_ratio_weight
+    @property
+    def nike_score_vol_ratio_weight(self): return self.thor_score_vol_ratio_weight
+    @property
+    def nike_score_body_eff_weight(self): return self.thor_score_body_eff_weight
+    @property
+    def nike_score_quiet_weight(self): return self.thor_score_quiet_weight
+    @property
+    def nike_score_confirm_weight(self): return self.thor_score_confirm_weight
+    @property
+    def nike_tier_a_confidence(self): return self.thor_tier_a_confidence
+    @property
+    def nike_tier_b_confidence(self): return self.thor_tier_b_confidence
+    @property
+    def nike_tier_c_confidence(self): return self.thor_tier_c_confidence
+    @property
+    def nike_tier_a_size_mult(self): return self.thor_tier_a_size_mult
+    @property
+    def nike_tier_b_size_mult(self): return self.thor_tier_b_size_mult
+    @property
+    def nike_tier_c_size_mult(self): return self.thor_tier_c_size_mult
+    @property
+    def nike_tier_b_bs_floor(self): return self.thor_tier_b_bs_floor
+    @property
+    def nike_tier_c_bs_floor(self): return self.thor_tier_c_bs_floor
 
 
 @dataclass

@@ -19,68 +19,68 @@ _LOOKBACK = _ev.lookback_window
 _TP_WEIGHT = _ev.tp_weight
 _SL_WEIGHT = _ev.sl_weight
 
-# ── Athena ──
-_ATH_CUSUM_MULT = _ev.athena_cusum_mult
-_ATH_CUSUM_FLOOR = _ev.athena_cusum_floor
-_ATH_TP_ATR = _ev.athena_tp_atr
-_ATH_SL_ATR = _ev.athena_sl_atr
-_ATH_MAX_BARS = _ev.athena_max_bars
+# ── Athena (V12: fallback defaults — Pantheon removed) ──
+_ATH_CUSUM_MULT  = getattr(_ev, 'athena_cusum_mult',  1.5)
+_ATH_CUSUM_FLOOR = getattr(_ev, 'athena_cusum_floor', 0.003)
+_ATH_TP_ATR      = getattr(_ev, 'athena_tp_atr',      2.5)
+_ATH_SL_ATR      = getattr(_ev, 'athena_sl_atr',      1.0)
+_ATH_MAX_BARS    = getattr(_ev, 'athena_max_bars',     72)
 
-# ── Ares ──
-_ARES_CUSUM_MULT = _ev.ares_cusum_mult
-_ARES_CUSUM_FLOOR = _ev.ares_cusum_floor
-_ARES_TP_ATR = _ev.ares_tp_atr
-_ARES_SL_ATR = _ev.ares_sl_atr
-_ARES_MAX_BARS = _ev.ares_max_bars
+# ── Ares (fallback defaults) ──
+_ARES_CUSUM_MULT  = getattr(_ev, 'ares_cusum_mult',  1.5)
+_ARES_CUSUM_FLOOR = getattr(_ev, 'ares_cusum_floor', 0.003)
+_ARES_TP_ATR      = getattr(_ev, 'ares_tp_atr',      2.5)
+_ARES_SL_ATR      = getattr(_ev, 'ares_sl_atr',      1.0)
+_ARES_MAX_BARS    = getattr(_ev, 'ares_max_bars',     72)
 
-# ── Hermes ──
-_HER_RANGE_MULT = _ev.hermes_range_mult
-_HER_RANGE_FLOOR = _ev.hermes_range_floor
-_HER_BUY_ZONE = _ev.hermes_buy_zone
-_HER_SELL_ZONE = _ev.hermes_sell_zone
-_HER_TP_ATR = _ev.hermes_tp_atr
-_HER_SL_ATR = _ev.hermes_sl_atr
-_HER_MAX_BARS = _ev.hermes_max_bars
+# ── Hermes (fallback defaults) ──
+_HER_RANGE_MULT  = getattr(_ev, 'hermes_range_mult',  0.015)
+_HER_RANGE_FLOOR = getattr(_ev, 'hermes_range_floor', 0.005)
+_HER_BUY_ZONE    = getattr(_ev, 'hermes_buy_zone',    0.2)
+_HER_SELL_ZONE   = getattr(_ev, 'hermes_sell_zone',   0.8)
+_HER_TP_ATR      = getattr(_ev, 'hermes_tp_atr',      1.5)
+_HER_SL_ATR      = getattr(_ev, 'hermes_sl_atr',      1.0)
+_HER_MAX_BARS    = getattr(_ev, 'hermes_max_bars',     48)
 
-# ── Artemis ──
-_ART_CUSUM_MULT = _ev.artemis_cusum_mult
-_ART_CUSUM_FLOOR = _ev.artemis_cusum_floor
-_ART_VOL_SURGE = _ev.artemis_vol_surge_mult
-_ART_TP_ATR = _ev.artemis_tp_atr
-_ART_SL_ATR = _ev.artemis_sl_atr
-_ART_MAX_BARS = _ev.artemis_max_bars
+# ── Artemis (fallback defaults) ──
+_ART_CUSUM_MULT  = getattr(_ev, 'artemis_cusum_mult',     1.2)
+_ART_CUSUM_FLOOR = getattr(_ev, 'artemis_cusum_floor',    0.003)
+_ART_VOL_SURGE   = getattr(_ev, 'artemis_vol_surge_mult', 1.8)
+_ART_TP_ATR      = getattr(_ev, 'artemis_tp_atr',         2.0)
+_ART_SL_ATR      = getattr(_ev, 'artemis_sl_atr',         1.0)
+_ART_MAX_BARS    = getattr(_ev, 'artemis_max_bars',        60)
 
-# ── Chronos ──
-_CHR_LOOKBACK = _ev.chronos_lookback
-_CHR_CUSUM_MULT = _ev.chronos_cusum_mult
-_CHR_CUSUM_FLOOR = _ev.chronos_cusum_floor
-_CHR_TP_ATR = _ev.chronos_tp_atr
-_CHR_SL_ATR = _ev.chronos_sl_atr
-_CHR_MAX_BARS = _ev.chronos_max_bars
+# ── Chronos (fallback defaults) ──
+_CHR_LOOKBACK    = getattr(_ev, 'chronos_lookback',    48)
+_CHR_CUSUM_MULT  = getattr(_ev, 'chronos_cusum_mult',  2.0)
+_CHR_CUSUM_FLOOR = getattr(_ev, 'chronos_cusum_floor', 0.004)
+_CHR_TP_ATR      = getattr(_ev, 'chronos_tp_atr',      2.0)
+_CHR_SL_ATR      = getattr(_ev, 'chronos_sl_atr',      1.2)
+_CHR_MAX_BARS    = getattr(_ev, 'chronos_max_bars',     72)
 
-# ── Hephaestus ──
-_HEP_WINDOW = _ev.heph_window
-_HEP_SUP_PCTL = _ev.heph_support_pctl
-_HEP_RES_PCTL = _ev.heph_resist_pctl
-_HEP_TOL_MULT = _ev.heph_tolerance_mult
-_HEP_TOL_FLOOR = _ev.heph_tolerance_floor
-_HEP_TP_ATR = _ev.heph_tp_atr
-_HEP_SL_ATR = _ev.heph_sl_atr
-_HEP_MAX_BARS = _ev.heph_max_bars
+# ── Hephaestus (fallback defaults) ──
+_HEP_WINDOW      = getattr(_ev, 'heph_window',         96)
+_HEP_SUP_PCTL    = getattr(_ev, 'heph_support_pctl',   10.0)
+_HEP_RES_PCTL    = getattr(_ev, 'heph_resist_pctl',    90.0)
+_HEP_TOL_MULT    = getattr(_ev, 'heph_tolerance_mult', 0.5)
+_HEP_TOL_FLOOR   = getattr(_ev, 'heph_tolerance_floor',0.005)
+_HEP_TP_ATR      = getattr(_ev, 'heph_tp_atr',         2.0)
+_HEP_SL_ATR      = getattr(_ev, 'heph_sl_atr',         1.0)
+_HEP_MAX_BARS    = getattr(_ev, 'heph_max_bars',        60)
 
-# ── Nike ──
-_NIKE_BODY_MIN        = _ev.nike_body_min
-_NIKE_BODY_RATIO_MULT = _ev.nike_body_ratio_mult
-_NIKE_BODY_LOOKBACK   = _ev.nike_body_lookback
-_NIKE_QUIET_BODY_PCT  = _ev.nike_quiet_body_pct / 100.0   # convert % → fraction
-_NIKE_VOL_MULT        = _ev.nike_vol_mult
-_NIKE_IMMEDIATE_BODY_RATIO_MULT = _ev.nike_immediate_body_ratio_mult
-_NIKE_IMMEDIATE_BODY_MIN        = _ev.nike_immediate_body_min
-_NIKE_IMMEDIATE_VOL_MULT        = _ev.nike_immediate_vol_mult
-_NIKE_CONTINUATION_VOL_MULT     = _ev.nike_continuation_vol_mult
-_NIKE_TP_ATR          = _ev.nike_tp_atr
-_NIKE_SL_ATR          = _ev.nike_sl_atr
-_NIKE_MAX_BARS        = _ev.nike_max_bars
+# ── Thor (active in V12) ──
+_THOR_BODY_MIN        = _ev.thor_body_min
+_THOR_BODY_RATIO_MULT = _ev.thor_body_ratio_mult
+_THOR_BODY_LOOKBACK   = _ev.thor_body_lookback
+_THOR_QUIET_BODY_PCT  = _ev.thor_quiet_body_pct / 100.0
+_THOR_VOL_MULT        = _ev.thor_vol_mult
+_THOR_IMMEDIATE_BODY_RATIO_MULT = _ev.thor_immediate_body_ratio_mult
+_THOR_IMMEDIATE_BODY_MIN        = _ev.thor_immediate_body_min
+_THOR_IMMEDIATE_VOL_MULT        = _ev.thor_immediate_vol_mult
+_THOR_CONTINUATION_VOL_MULT     = _ev.thor_continuation_vol_mult
+_THOR_TP_ATR          = _ev.thor_tp_atr
+_THOR_SL_ATR          = _ev.thor_sl_atr
+_THOR_MAX_BARS        = _ev.thor_max_bars
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -267,7 +267,7 @@ def fast_extract_artemis(closes, highs, lows, atrs, atr_pct, cusum_pos, cusum_ne
     Bidirectional (v11.5b):
       - Bullish: CUSUM_pos + vol_surge + NOT new_high  (hidden accumulation)
       - Bearish: CUSUM_neg + vol_surge + NOT new_low   (hidden distribution)
-    Distinct from Athena/Ares (require structural break) and Nike (no CUSUM).
+    Distinct from Athena/Ares (require structural break). Thor requires no CUSUM.
     """
     N = len(closes)
     out_pos    = np.zeros(N * 2, dtype=np.int64)
@@ -423,8 +423,8 @@ def fast_extract_hephaestus(closes, highs, lows, atrs, atr_pct, orig_idx):
 # ═══════════════════════════════════════════════════════════════════
 
 @njit
-def fast_extract_nike(closes, highs, lows, opens, atrs, volumes, vol_avg20, orig_idx):
-    """Nike: Tiered breakout detector (v12.0).
+def fast_extract_thor(closes, highs, lows, opens, atrs, volumes, vol_avg20, orig_idx):
+    """Thor: Tiered breakout detector (v12.0).
 
     Tier A:
       - same-bar entry when the setup candle is already extreme
@@ -440,7 +440,7 @@ def fast_extract_nike(closes, highs, lows, opens, atrs, volumes, vol_avg20, orig
     out_weights= np.zeros(N, dtype=np.float64)
     count      = 0
     last_pos   = -_MIN_GAP
-    lookback   = _NIKE_BODY_LOOKBACK
+    lookback   = _THOR_BODY_LOOKBACK
 
     for i in range(lookback + 1, N):
         if i - last_pos < _MIN_GAP:
@@ -454,29 +454,29 @@ def fast_extract_nike(closes, highs, lows, opens, atrs, volumes, vol_avg20, orig
         candle_range = highs[i] - lows[i]
         body_eff = body_i / candle_range if candle_range > 0.0 else 0.0
         body_ratio = body_i / avg_body if avg_body > 0.0 else 0.0
-        quiet_ok = opens[i] > 0.0 and avg_body / opens[i] <= _NIKE_QUIET_BODY_PCT
+        quiet_ok = opens[i] > 0.0 and avg_body / opens[i] <= _THOR_QUIET_BODY_PCT
         vol_ratio = volumes[i] / vol_avg20[i] if vol_avg20[i] > 0.0 else 0.0
 
         setup_ok = (
             body_i > 0.0 and
             body_i / (opens[i] + 1e-12) >= 0.01 and
             avg_body > 0.0 and
-            body_eff >= _NIKE_BODY_MIN and
-            body_ratio >= _NIKE_BODY_RATIO_MULT and
+            body_eff >= _THOR_BODY_MIN and
+            body_ratio >= _THOR_BODY_RATIO_MULT and
             quiet_ok and
-            vol_ratio >= _NIKE_VOL_MULT
+            vol_ratio >= _THOR_VOL_MULT
         )
 
         if setup_ok:
             immediate_ok = (
-                body_eff >= _NIKE_IMMEDIATE_BODY_MIN and
-                body_ratio >= _NIKE_IMMEDIATE_BODY_RATIO_MULT and
-                vol_ratio >= _NIKE_IMMEDIATE_VOL_MULT
+                body_eff >= _THOR_IMMEDIATE_BODY_MIN and
+                body_ratio >= _THOR_IMMEDIATE_BODY_RATIO_MULT and
+                vol_ratio >= _THOR_IMMEDIATE_VOL_MULT
             )
             if immediate_ok:
                 label, weight = fast_triple_barrier_label(
                     closes, highs, lows, atrs, i,
-                    1, _NIKE_TP_ATR, _NIKE_SL_ATR, _NIKE_MAX_BARS
+                    1, _THOR_TP_ATR, _THOR_SL_ATR, _THOR_MAX_BARS
                 )
                 if label != -1:
                     out_pos[count]    = orig_idx[i]
@@ -497,17 +497,17 @@ def fast_extract_nike(closes, highs, lows, opens, atrs, volumes, vol_avg20, orig
                 setup_avg_body += abs(closes[j] - opens[j])
             setup_avg_body /= lookback
             setup_ratio = setup_body / setup_avg_body if setup_avg_body > 0.0 else 0.0
-            setup_quiet_ok = opens[setup_idx] > 0.0 and setup_avg_body / opens[setup_idx] <= _NIKE_QUIET_BODY_PCT
+            setup_quiet_ok = opens[setup_idx] > 0.0 and setup_avg_body / opens[setup_idx] <= _THOR_QUIET_BODY_PCT
             setup_vol_ratio = volumes[setup_idx] / vol_avg20[setup_idx] if vol_avg20[setup_idx] > 0.0 else 0.0
 
             prev_setup_ok = (
                 setup_body > 0.0 and
                 setup_body / (opens[setup_idx] + 1e-12) >= 0.01 and
                 setup_avg_body > 0.0 and
-                setup_eff >= _NIKE_BODY_MIN and
-                setup_ratio >= _NIKE_BODY_RATIO_MULT and
+                setup_eff >= _THOR_BODY_MIN and
+                setup_ratio >= _THOR_BODY_RATIO_MULT and
                 setup_quiet_ok and
-                setup_vol_ratio >= _NIKE_VOL_MULT
+                setup_vol_ratio >= _THOR_VOL_MULT
             )
             if prev_setup_ok:
                 setup_mid = 0.5 * (opens[setup_idx] + closes[setup_idx])
@@ -519,7 +519,7 @@ def fast_extract_nike(closes, highs, lows, opens, atrs, volumes, vol_avg20, orig
                 if confirm_ok:
                     label, weight = fast_triple_barrier_label(
                         closes, highs, lows, atrs, i,
-                        1, _NIKE_TP_ATR, _NIKE_SL_ATR, _NIKE_MAX_BARS
+                        1, _THOR_TP_ATR, _THOR_SL_ATR, _THOR_MAX_BARS
                     )
                     if label != -1:
                         out_pos[count]    = orig_idx[i]
@@ -543,17 +543,17 @@ def fast_extract_nike(closes, highs, lows, opens, atrs, volumes, vol_avg20, orig
             setup_avg_body += abs(closes[j] - opens[j])
         setup_avg_body /= lookback
         setup_ratio = setup_body / setup_avg_body if setup_avg_body > 0.0 else 0.0
-        setup_quiet_ok = opens[setup_idx] > 0.0 and setup_avg_body / opens[setup_idx] <= _NIKE_QUIET_BODY_PCT
+        setup_quiet_ok = opens[setup_idx] > 0.0 and setup_avg_body / opens[setup_idx] <= _THOR_QUIET_BODY_PCT
         setup_vol_ratio = volumes[setup_idx] / vol_avg20[setup_idx] if vol_avg20[setup_idx] > 0.0 else 0.0
 
         prev2_setup_ok = (
             setup_body > 0.0 and
             setup_body / (opens[setup_idx] + 1e-12) >= 0.01 and
             setup_avg_body > 0.0 and
-            setup_eff >= _NIKE_BODY_MIN and
-            setup_ratio >= _NIKE_BODY_RATIO_MULT and
+            setup_eff >= _THOR_BODY_MIN and
+            setup_ratio >= _THOR_BODY_RATIO_MULT and
             setup_quiet_ok and
-            setup_vol_ratio >= _NIKE_VOL_MULT
+            setup_vol_ratio >= _THOR_VOL_MULT
         )
         if not prev2_setup_ok:
             continue
@@ -564,14 +564,14 @@ def fast_extract_nike(closes, highs, lows, opens, atrs, volumes, vol_avg20, orig
             lows[confirm1_idx] >= setup_mid and
             closes[i] >= closes[setup_idx] and
             highs[i] >= highs[setup_idx] and
-            entry_vol_ratio >= _NIKE_CONTINUATION_VOL_MULT
+            entry_vol_ratio >= _THOR_CONTINUATION_VOL_MULT
         )
         if not continuation_ok:
             continue
 
         label, weight = fast_triple_barrier_label(
             closes, highs, lows, atrs, i,
-            1, _NIKE_TP_ATR, _NIKE_SL_ATR, _NIKE_MAX_BARS
+            1, _THOR_TP_ATR, _THOR_SL_ATR, _THOR_MAX_BARS
         )
         if label != -1:
             out_pos[count]    = orig_idx[i]
@@ -581,3 +581,6 @@ def fast_extract_nike(closes, highs, lows, opens, atrs, volumes, vol_avg20, orig
             last_pos  = i
 
     return out_pos[:count], out_labels[:count], out_weights[:count]
+
+# Backward-compatibility alias
+fast_extract_nike = fast_extract_thor

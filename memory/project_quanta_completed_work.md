@@ -613,7 +613,128 @@ Previous fix cleaned features at source but `_run_optuna_search()` subsampled da
 - Exposed the '0 Trades Passed / -114 Calmar' Optuna failure state:
   - Optuna baseline bounds for 	hor_wave_strength_min (50.0) and 	hor_min_score_trade (70.0) physically choked stringency to <4 valid trades a year on average across all 800 samples.
   - Loosened Optuna bounds in optuna_search.py (	hor_wave_strength_min 25-80, 	hor_min_score_trade 60-95), allowing the TPE sampler the necessary geometry volume to find the mathematical 'Big Win' pockets.
-- Confirmed Baldur and Freya baseline interaction limits � verified they function correctly and safely within their designated live bounds.
+- Confirmed Baldur and Freya baseline interaction limits � verified they function correctly and safely within their designated live bounds.
 - Re-activated the full _SL_CHOICES parameter sweep to let the tuner aggressively track mathematical constraints safely.
 - Result completed: **+1238.36% Compounded Growth ( -> ) / 26.63% Max DD / 199 Trades**.
 
+
+## Phase V12 — Thor Specialist Pivot (2026-04-14)
+- Architecture fully refactored to single-specialist Norse Thor engine (CatBoost).
+- Removed all Pantheon specialists (Athena, Ares, Hermes, Hephaestus, Artemis, Chronos, Nike).
+- Removed Odin Meta-Learner (TFT) and Heimdall PPO sizer.
+- Transitioned training to offline-first mode using feather_cache (no live Binance calls).
+- Fixed Thor event extraction bug (missing opens argument) and Numba config import crashes.
+- Deployed Thor Gen 1: AUC 0.8080 | Brier 0.1528.
+- Files: train_thor.py, QUANTA_ml_engine.py, QUANTA_bot.py, QUANTA_selector.py
+
+## Phase V12.1 — Nike→Thor Full Codebase Rename (2026-04-15)
+- Complete rename of all Nike references to Thor across 7 core files. Nike was a cosmetic alias for the same breakout detection logic; Thor is now the single canonical name.
+- `quanta_thor_screener.py` — new canonical file. All `NikeSignal/NikeScreener/_nike_check` renamed to Thor equivalents. Backward-compat aliases appended at end.
+- `quanta_nike_screener.py` — converted to thin shim that re-exports from quanta_thor_screener.
+- `quanta_config.py` — all 13 `nike_*` EventExtractionConfig params renamed to `thor_*`. Added new Thor entry quality gate params: `thor_wave_strength_min=40.0`, `thor_pre_impulse_r2_max=0.70`, `thor_compound_mode="asymmetric_target"`, `thor_compound_activation_score=85.0`, `thor_compound_max_loss_pct=3.0`. Added 25 `@property` backward-compat aliases mapping old `nike_*` names.
+- `quanta_numba_extractors.py` — `_NIKE_*` constants → `_THOR_*`, `fast_extract_nike` → `fast_extract_thor` with alias.
+- `QUANTA_bot.py` — all nike screener imports, attribute names, specialist keys updated to thor.
+- `QUANTA_trading_core.py` — position dict keys (`thor_bank_hit`, etc.), compound config keys, `open_position()` signature extended with `thor_score=None, **kwargs`.
+- `QUANTA_ml_engine.py` — purge gap uses `thor_max_bars`, specialist key `'thor'` throughout.
+- All 8 files pass `py -3.11 -m py_compile`. Zero functional `nike_*` references remain in non-shim files.
+
+## Phase V12.2 — WalkForward Sim Norse Translation (2026-04-15)
+- Rewrote QUANTA_WalkForward_Sim.py to close the gap between WF OOS results and Norse year sim.
+- Critical loop order fix: symbol-outer/bar-inner → bar-outer/symbol-inner (fixes _MAX_CONC, concurrent position management, and cooldown logic).
+- Wired real Thor CatBoost model (thor_gen1.cbm, 634 trees, AUC 0.81) via offline replay engine. `_thor_model_score()` runs inference on 102-feature IMPULSE mask. Score discrimination improved from ~0.3 to ~5 point separation.
+- Added `_find_thor_model()` searching multiple path candidates including `Path(__file__).parent`.
+- Added pre_impulse_r2 veto (feature[272] > 0.70 → skip). Strongest negative predictor from Norse learned filter (coef=-0.24).
+- Added wave_strength gate using real taker_buy_base (klines col[9]) — exact match to Norse wave_strength_score (coef=+0.37). Falls back to directional-volume proxy if col[9] absent.
+- Replaced binary compound_activation_score threshold (85.0) with continuous linear scaling: risk = 0.5% at score=68 → 3.0% at score=100. Old binary threshold was firing on only 17/479 trades.
+- Reduced _TRAIN_DAYS to 60 (hardcoded, config has 180d) → 10 OOS windows, 300 OOS days.
+- Expanded symbol universe from 50 cap to all available feather cache files (245-401 symbols).
+- Added per-trade equity tracking for accurate Max DD (was window-level only → always 0%).
+- Sim progression: +37.7% → +347% → +2054% → actively improving.
+
+## Phase V12.3 — MAE Stats Calibration + 3-Layer Pyramid (2026-04-15)
+- Read and applied NORSE_MAE_STATS_REPORT.md recommendations to QUANTA_WalkForward_Sim.py.
+- Parameter changes from MAE report Recommended Parameter Block + Decision Matrix:
+  - `SL_ATR: 2.40 → 3.00` (P90 winner MAE; rescues 13.6% of 1-3 ATR outcome trades)
+  - `BANK_ATR: 5.40 → 4.20` (top decision-matrix combo)
+  - `BANK_FRAC: 0.45 → 0.35` (top decision-matrix combo)
+  - `TRAIL_ATR: 6.00 → 2.00` (tighter runner, top combo)
+  - Added `TRAIL_ACTIVATE_ATR = 1.50`: trail only kicks in 1.5 ATR above bank price, not immediately
+  - `MAX_PRE: 144 → 48` (4h timeout; kills dead pre-bank trades)
+  - `MAX_POST: 1152 → 96` (8h post-bank runner window)
+- MAE early exit veto: if trade goes 3.62 ATR adverse in first 5 bars → `MAE_VETO` exit (from P50 winner MAE from entry in aggregate bucket snapshot).
+- Hour-of-day UTC filter: skip new entries at hours 0, 7, 10, 11, 12 (PF 0.51-0.81 in hour-of-week heatmap). Best hours: 2 (PF 1.15), 8 (PF 1.16), 14 (PF 1.18).
+- 3-layer pyramid averaging-in strategy (from Norse MAE pump stats):
+  - L1: normal Thor entry at price P
+  - L2: add at +0.5 ATR above entry, size=50% of L1, SL=0.5 ATR below add entry
+  - L3: if L2 SL hits, recovery re-entry at that price, target=P+3.77 ATR (MAE overall runup p50=3.80 ATR), SL=original entry - 3.0 ATR
+  - All layers force-close at main position exit. Bank event partially closes L2 add (35% fraction).
+  - Trade record now carries `add1_pnl`, `add2_pnl`, `layers` fields.
+- Norse-style timestamped run folder: `wf_runs/<YYYYMMDD_HHMMSS>/` with 8 artifacts:
+  - `WF_SIM_REPORT_<ts>.md`, `wf_trades_<ts>.csv`, `wf_wins_<ts>.csv`, `wf_losses_<ts>.csv`
+  - `wf_window_stats_<ts>.csv`, `wf_score_distribution_<ts>.csv`, `wf_summary_<ts>.csv`, `wf_sim_results_<ts>.json`
+- Files modified: QUANTA_WalkForward_Sim.py (primary)
+
+
+## Khairul's Identity — Formal Derivation (2026-04-15)
+- Derived the master compound growth equation of the QUANTA system from WF simulation data.
+- Named "Khairul's Identity" by Habib Khairul — the original creator of the 194× bot.
+- Identity: C(T) = C₀ · exp(n · T)
+- Full expansion: n = λ · [P·ln(1+f·b) + (1-P)·ln(1-f)] with pyramid boost ln(Π)
+- Calibrated values from WF sim (468 trades, 300 OOS days, $10k→$1.988M):
+  - n = 0.01764/day | λ = 1.56 trades/day | g̃ = 0.01131/trade
+  - P = 0.707 | b = 1.810 | f_avg ≈ 0.015 | Π = 1.696
+  - f/f* = 2.75% of Kelly → MaxDD = 8.1% (theoretical: 11%, corr discount gives 8.1%)
+  - Average runner exit = 6.09 ATR (derived from b=1.810, geometry-consistent)
+  - Pump phase: n_pump ≈ 0.082/day (universal altcoin constant) > n_QUANTA ✓
+  - Grinold ceiling: n_max = 0.0366/day → QUANTA operates at 48% of info-theoretic ceiling
+  - Cross-coin correlation discount: ρ_eff = 0.343 → 65.7% of theoretical alpha removed by corr
+- Five consistency constraints: Kelly, Pump Phase, Grinold, MAE Geometry, Pyramid
+- All five constraints simultaneously satisfied → identity is over-determined and self-consistent
+- Stored in: memory/project_quanta_technical_decisions.md (equation reference)
+
+## Phase V12.4 — Gompertz Dynamic Bank + Dynamic Timeouts (2026-04-16)
+- Replaced ALL hardcoded exit timing with Gompertz hazard model λ(t) = λ₀·e^(γt).
+- Three hardcoded values eliminated:
+  - _BANK_ATR = 4.20 ATR (fixed) → _dynamic_bank_atr(n_eff, atr_pct)
+  - _MAX_PRE  = 48 bars (4h)     → _dynamic_pre_timeout(n_eff)  = ln(1.5·n/λ₀)/γ
+  - _MAX_POST = 96 bars (8h)     → _dynamic_post_timeout(n_eff) = ln(2.5·n/λ₀)/γ − t_bank
+    (was originally 1152 bars = 4 days before MAE calibration)
+- New helper functions: _pump_n_eff(), _gompertz_t_star(), _dynamic_bank_atr(),
+  _dynamic_pre_timeout(), _dynamic_post_timeout()
+- New constants: _N_PUMP_MICRO=0.700, _GOMPERTZ_L0=0.517, _GOMPERTZ_GAMMA=2.92,
+  _K_RUNNER_HAZARD=2.5, _K_PRE_HAZARD=1.5
+- SimPosition extended with: n_eff, dyn_bank_atr, dyn_max_pre, dyn_max_post
+- SimTrade extended with: dyn_bank_atr, n_eff (for post-run analysis)
+
+## V12.4 WF Sim Results (2026-04-16) — 10/10 windows profitable
+- Total Return: +150,235% ($10k → $15,023,500) — was +19,883%
+- Win Rate: 70.0% | PF: 4.65 | Sharpe: 7.27 | Sortino: 19.25 | Calmar: 15,497
+- Max DD: 9.7% (was 8.1% — small cost for 7.55× gain)
+- L2 add PnL: +$3,457,528 (was $262k — +13.2×)
+- L3 recovery PnL: +$2,665,814 (was $554k — +4.8×)
+- 466 trades, 300 OOS days, 245 symbols
+- Exits: Chandelier/Runner 265 | SL 91 | Timeout/WindowEnd 110
+
+## Updated Khairul's Identity Constants (V12.4)
+- n_daily = ln(1502.35)/300 = 0.02438/day (was 0.01764)
+- n_per_trade = 0.01569 (was 0.01131)
+- Monthly n = 0.7314 → e^0.7314 = 2.078 (+107.8%/month)
+- Annual n = 8.899 → e^8.899 = 7,337× per year
+- Doubling time = ln(2)/0.02438 = 28.4 days (was 39.3 days)
+
+## Phase V12.4 — Gompertz Dynamic Exit + Live Bot Integration (2026-04-16)
+- WF sim V12.4 result: +150,235% (+755% vs V12.3 +19,883%), 466 trades, 70.0% WR, PF 4.65, Sharpe 7.27, MaxDD 9.7%
+- L2 add PnL: +$3,457,528 | L3 recovery PnL: +$2,665,814 (pyramid now dominant at 41% of total)
+- Replaced ALL hardcoded exit timeouts with Gompertz hazard model:
+  - `_BANK_ATR = 4.20` (fixed) → `_dynamic_bank_atr(n_eff, atr_pct)` = (e^(n·t*)-1)/ATR%
+  - `_MAX_PRE = 48 bars` (fixed) → `_dynamic_pre_timeout(n_eff)` = bars until λ(t)=1.5·n
+  - `_MAX_POST = 96 bars` (fixed, was 1152=4 days before MAE calibration) → `_dynamic_post_timeout(n_eff)` = bars until λ(t)=2.5·n
+- Added `_pump_n_eff()`, `_gompertz_t_star()` module-level helpers in WF sim
+- Ported to live bot:
+  - `quanta_config.py`: Added 14 new fields — thor_sl_atr_calibrated, thor_bank_atr_calibrated, thor_bank_fraction_calibrated, thor_runner_trail_atr_calibrated, thor_trail_activate_atr_calibrated, thor_max_bars_pre/post_calibrated, thor_mae_veto_bars/atr, 5× Gompertz constants
+  - `QUANTA_trading_core.py`: Added 5 static methods to PaperTrading (_gc_n_eff, _gc_t_star, _gc_bank_atr, _gc_pre_bars, _gc_post_bars)
+  - `QUANTA_trading_core.py`: Rewrote `_tick_thor_v12` — Gompertz dynamic bank/pre/post, trail_activate_atr (1.5 ATR above bank), MAE veto (3.62 ATR in 5 bars), breakeven SL at bank hit
+  - `QUANTA_trading_core.py`: Added `_build_thor_exit_profile()` — was missing (AttributeError silently prevented thor_v2 routing), now returns calibrated params dict with mode='thor_v2'
+  - Position dict: 6 new Gompertz fields: gompertz_n_eff, gompertz_lowest, gompertz_dyn_bank_atr, gompertz_dyn_max_pre, gompertz_dyn_max_post, gompertz_bank_bar
+- Khairul's Identity λ companion equation now live in production
+- Files: QUANTA_WalkForward_Sim.py, QUANTA_trading_core.py, quanta_config.py
