@@ -2183,9 +2183,33 @@ class Bot:
                                                  thor_context_active=True,
                                                  baldur_top_warning=False,
                                                  freya_context_valid=False,
-                                                 exit_profile=self._build_thor_exit_profile(), # This now routes to Thor internally in trading_core
+                                                 exit_profile=self._build_thor_exit_profile(),
                                                  timeout_bars=int(self.cfg.events.thor_max_bars_pre_bank),
                                                  thor_score=opportunity_score)
+
+                        # ── Thor-only Telegram notification (fires only on actual execution) ──
+                        if item['symbol'] in self.paper.positions:
+                            try:
+                                _pos = self.paper.positions[item['symbol']]
+                                _dyn_bank_atr = _pos.get('gompertz_dyn_bank_atr', 4.20)
+                                _n_eff        = _pos.get('gompertz_n_eff', 0.700)
+                                _sl_px        = _pos.get('sl_price', 0.0)
+                                _bank_px      = _pos.get('thor_bank_price', 0.0)
+                                _bal          = self.paper.balance
+                                _tg_msg = (
+                                    f"⚡ *THOR ENTRY EXECUTED*\n"
+                                    f"*{item['symbol']}* | Score: {opportunity_score:.0f} | Conf: {ml_conf:.0f}%\n\n"
+                                    f"Entry:  `${price:.6g}`\n"
+                                    f"SL:     `${_sl_px:.6g}`  (3.0 ATR)\n"
+                                    f"Bank:   `${_bank_px:.6g}`  ({_dyn_bank_atr:.2f} ATR)\n"
+                                    f"n_eff:  `{_n_eff:.3f}` day\u207b\u00b9\n\n"
+                                    f"Balance: `${_bal:,.0f}`\n"
+                                    f"\u23f0 {datetime.now().strftime('%H:%M:%S')}"
+                                )
+                                self.tg.send(_tg_msg)
+                            except Exception as _tg_err:
+                                logging.debug(f"Thor TG notify failed: {_tg_err}")
+
                         # v11.5: Store specialist probs for Brier score tracking at close
                         if specialist_probs_batch is not None and item['symbol'] in self.paper.positions:
                             self.paper.positions[item['symbol']]['specialist_probs'] = specialist_probs_batch[idx].copy()
@@ -2663,21 +2687,12 @@ class Bot:
         
         summary += f"🕐 {datetime.now().strftime('%H:%M:%S')}"
         
-        # Log to terminal
+        # Log to terminal only — Telegram suppressed (Thor-only alerts mode)
         print(f"\n🚀 [SNIPE ALERT CAUGHT - {gen_info}]\n" + "\n".join([line for line in summary.split('\n') if '🆕' not in line and '🕐' not in line and line.strip()]))
-        
-        # Send to Telegram
-        self.tg.send(summary)
-        
+
         # Add to daily evaluator picks
         for opp in high_conf[:10]:
             self._add_to_daily_picks(opp)
-        
-        # Detailed alert for #1
-        if high_conf:
-            best = high_conf[0]
-            self._alert(best['symbol'], best['tf_analysis'], best['direction'], 
-                       best['confidence'], fg, best['magnitude'], rank=1)
     
     def _send_alerts(self, fg):
         """Send alerts for top opportunities"""
@@ -2708,14 +2723,8 @@ class Bot:
         summary += f"😨 F&G: {fg['value']} ({fg['label']})\n"
         summary += f"🕐 {datetime.now().strftime('%H:%M:%S')}"
         
-        self.tg.send(summary)
-        print(f"📢 Sent TOP 10 to Telegram (70%+ confidence)")
-        
-        # Detailed alert for #1
-        if top_10:
-            best = top_10[0]
-            self._alert(best['symbol'], best['tf_analysis'], best['direction'], 
-                       best['confidence'], fg, best['magnitude'], rank=1)
+        # Telegram suppressed — Thor-only alerts mode
+        print(f"📢 TOP 10 scanned (70%+ confidence) — Telegram suppressed, Thor-only mode")
     
     def _alert(self, sym, tfa, direction, conf, fg, magnitude, rank=1):
         """Send detailed alert"""
