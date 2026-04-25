@@ -738,3 +738,261 @@ Previous fix cleaned features at source but `_run_optuna_search()` subsampled da
   - Position dict: 6 new Gompertz fields: gompertz_n_eff, gompertz_lowest, gompertz_dyn_bank_atr, gompertz_dyn_max_pre, gompertz_dyn_max_post, gompertz_bank_bar
 - Khairul's Identity λ companion equation now live in production
 - Files: QUANTA_WalkForward_Sim.py, QUANTA_trading_core.py, quanta_config.py
+
+## Live Thor Direction Clamp + Telegram Fallback (2026-04-17)
+- Fixed live consumer behavior in `QUANTA_bot.py` so Thor no longer emits executable `BEARISH` signals.
+  - Root cause: CatBoost still outputs a binary class distribution and the Thor-only consumer was mapping the negative class to `BEARISH`, which leaked old long/short semantics into the new single-specialist pump pipeline.
+  - Fix: negative Thor outputs are now treated as `NEUTRAL` (`do not trade`) instead of short entries.
+- Confirmed the old `specialist_probs_batch` NameError path is guarded in the current consumer code by explicit fallback initialization (`specialist_probs_batch = None`, `specialist_keys = []`), so stale runtime crashes came from an older file state, not the patched one.
+- Improved Telegram execution notifications in `quanta_telegram.py`.
+  - Root cause observed live: `Telegram send failed: no response after retries` despite valid token/chat_id in environment.
+  - Fix: `TelegramBot.send()` now retries through the existing `NetworkHelper` path first, then falls back to a direct `requests.post(...)` send to Telegram if the proxy/session path returns no response.
+  - Added clearer error logging for no-response, non-JSON, and Telegram API error payloads.
+- Verification:
+  - `py -3.11 -m py_compile QUANTA_bot.py quanta_telegram.py`
+  - environment check confirmed `TELEGRAM_TOKEN` and `TELEGRAM_CHAT_ID` are both present at runtime
+
+## Fresh Prediction Reset + Legacy RL Gate Fix (2026-04-17)
+- Cleared persisted prediction state for a true fresh-start restart:
+  - deleted `quanta_data/predictions_primary.feather`
+  - deleted `quanta_data/predictions_backup1.feather`
+  - deleted `quanta_data/predictions_backup2.feather`
+  - deleted `rl_memory.feather`
+- Left `paper_trading_state.json` intact intentionally because it is paper trade / position state, not just saved prediction backlog.
+- Found one real legacy interference path in the live bot wrapper:
+  - local runtime `Config` in `QUANTA_bot.py` was still hard-forcing `self.rl_enabled = True`
+  - this could allow dormant PPO / RL background behavior to stay alive even though canonical `quanta_config.py` already sets `RLConfig.rl_enabled = False`
+- Fixed the runtime wrapper to respect canonical config:
+  - `QUANTA_bot.Config.rl_enabled` now mirrors `self._sys.rl.rl_enabled`
+  - PPO agent initialization now only occurs when `self.cfg.rl_enabled` is true
+- Audit result:
+  - remaining Pantheon / PPO / TFT / MoE references are still present in comments, banners, imports, and some cold-path legacy helper code
+  - they are mostly cosmetic or dormant now, not part of Thor’s hot inference decision path
+  - the meaningful live-path disturbances that were still active were:
+    1. Thor negative class leaking through as `BEARISH` trade direction
+    2. Telegram network path failing without a direct fallback
+    3. runtime RL/PPO being force-enabled by the bot wrapper
+- Verification:
+  - `py -3.11 -m py_compile QUANTA_bot.py quanta_telegram.py`
+  - runtime check showed `Config().rl_enabled == False` after the patch
+
+## Dashboard Executed-Trade Refactor (2026-04-17)
+- Refactored the overview trade table in `quanta_dashboard.py` and `templates/dashboard.html` so the dashboard distinguishes executed positions from generic scan/prediction noise.
+- Active paper positions now expose:
+  - `executed_by`
+  - `execution_state`
+  - `is_thor_executed`
+- Dashboard labels:
+  - active Thor long positions with `THOR EXECUTED`
+  - anything else with `LEGACY / NON-THOR`
+- Overview card wording updated from generic `Open Positions` to `Executed Trades`.
+- The positions/history table now shows:
+  - `Engine`
+  - `State`
+  - entry / size / confidence for active executions
+  - engine / entry / exit / result for history rows
+- Fixed a broken duplicate render block in the dashboard JavaScript that still referenced an undefined `positions` variable during overview refresh.
+- Verification:
+  - `py -3.11 -m py_compile quanta_dashboard.py`
+
+## Dashboard Thor-Only Main View + Legacy State Split (2026-04-17)
+- Tightened the dashboard overview so the main active-positions table now shows only Thor-executed active positions.
+- Added a separate `Legacy State` section underneath the main overview for any non-Thor / leftover active positions still present in paper state.
+- Backend:
+  - `quanta_dashboard.py` now splits active positions into:
+    - `active_positions` = Thor-executed only
+    - `legacy_active_positions_detail` = non-Thor active leftovers
+- Frontend:
+  - main table header now reads `Thor Executed Positions`
+  - added `renderLegacyTable()` in `templates/dashboard.html`
+  - legacy section is auto-hidden when there are no leftover non-Thor positions
+- Result:
+  - the overview no longer mixes current Thor execution state with stale short/legacy positions
+  - any contamination is still visible, but quarantined into its own section instead of polluting the main live view
+- Verification:
+  - `py -3.11 -m py_compile quanta_dashboard.py`
+
+## Dashboard Final Cleanup Pass (2026-04-17)
+- Added an explicit red warning banner at the top of Overview when legacy active positions exist in paper state.
+- Renamed the misleading `RL Memory` overview card to `Execution Pipeline`.
+- Replaced the old `Buffer Size` line with a live `Mode` line:
+  - `Thor-only` when runtime RL is disabled
+  - `Thor + RL follow-up` if RL is ever re-enabled later
+- Position modal now shows:
+  - `Engine`
+  - `Execution State`
+  This makes each clicked active position self-describing as Thor-executed vs legacy state.
+- Result:
+  - Overview now reads as an execution dashboard, not a generic old multi-system monitor
+  - Legacy contamination is elevated into an explicit warning state instead of being easy to miss
+- Verification:
+  - `py -3.11 -m py_compile quanta_dashboard.py`
+
+## Persisted Legacy Paper Positions Removed (2026-04-17)
+- Cleaned `paper_trading_state.json` to remove stale non-Thor / non-bullish active positions that came from the earlier live direction leak before the Thor bearish clamp.
+- Preserved only active positions satisfying:
+  - `specialist == 'thor'`
+  - `direction == 'BULLISH'`
+- Result:
+  - kept `4` valid Thor-long active positions
+  - removed stale positions:
+    - `PIPPINUSDT`
+    - `SAGAUSDT`
+    - `BERAUSDT`
+    - `TAOUSDT`
+    - `BCHUSDT`
+    - `1000RATSUSDT`
+- Important runtime note:
+  - this cleans persisted paper state on disk
+  - a running bot/dashboard process may still hold the old positions in memory until restart / reload
+
+## Thor Live Confidence Path Tightened (2026-04-22)
+- Fixed Thor-only live calibration in `QUANTA_bot.py` to call `AdaptiveConformalCalibrator.predict()` correctly instead of treating it like isotonic regression.
+- When the conformal calibrator returns `interval_width`, the live uncertainty discount now uses that width directly instead of falling back to the Bayesian proxy.
+- Execution and gating now use the adjusted confidence path, not the raw pre-penalty model confidence.
+- Streak persistence no longer boosts the confidence value itself; it only boosts magnitude so the score can reward persistence without inflating the probability number.
+- Added `raw_model_confidence` to the entry diagnostics payload for post-trade inspection.
+- Verification:
+  - `python -m py_compile QUANTA_bot.py`
+
+## WF Sim Thor Inference Aligned (2026-04-22)
+- Updated `QUANTA_WalkForward_Sim.py` so Thor replay inference now loads and uses `thor_feature_indices.npy`, `thor_scaler.pkl`, and `thor_calibrator.pkl` when available.
+- The walk-forward sim no longer scores entries from raw unscaled `predict_proba()[1]` alone.
+- Sim Thor score now follows the live Thor-only path more closely:
+  - slice with Thor feature indices
+  - scale with Thor scaler
+  - calibrate with `AdaptiveConformalCalibrator`
+  - apply uncertainty discount from conformal `interval_width` when present
+- Verification:
+  - `py -3.11 -m py_compile QUANTA_WalkForward_Sim.py`
+
+## WF Sim Leverage Cap Restored (2026-04-22)
+- Updated `QUANTA_WalkForward_Sim.py` entry sizing so score-based risk still determines target notional, but the final position is capped by the same leverage logic used in live paper trading.
+- Base cap is `5x` notional on equity; S-tier entries (`score >= 90` and `bs_prob >= 0.70`) can still use `10x`.
+- This prevents tiny-ATR names from blowing up sim notionals far beyond the live Thor path.
+- Verification:
+  - `py -3.11 -m py_compile QUANTA_WalkForward_Sim.py`
+
+## Live Thor Fully Re-Aligned To Sim (2026-04-22)
+- Updated `QUANTA_bot.py` so live Thor execution now uses the corrected Thor score directly instead of `confidence × magnitude / 10`.
+- Live paper entries now pass the real feature-derived `bs_prob` into `PaperTrading.open_position()` instead of the old hardcoded `0.5`.
+- Live Thor sizing now uses 5m ATR at entry for stop-distance parity with the walk-forward sim, rather than the old 4h ATR path.
+- Removed the extra live-only execution blockers that the current WF sim does not use:
+  - magnitude floor veto
+  - separate confidence gate
+  - top-risk veto
+- Verification:
+  - `py -3.11 -m py_compile QUANTA_bot.py`
+
+## Prediction Pipeline Reset (2026-04-22)
+- Deleted the persisted pending-prediction backup files from `quanta_data`:
+  - `predictions_primary.feather`
+  - `predictions_backup1.feather`
+  - `predictions_backup2.feather`
+- Verified `rl_memory.feather` is not present, so there was no additional on-disk RL buffer to clear.
+- Left `paper_trading_state.json`, `daily_picks.json`, model artifacts, and logs untouched.
+
+## Runtime Launch/Stop Check (2026-04-22)
+- Started QUANTA from workspace using `py -3.11 main.py` (detached process launch).
+- Runtime boot log was written to `quanta_runtime.log` (latest boot block timestamped `2026-04-22 17:17:32` local time).
+- User then stopped the run manually, so no long-running session was kept active.
+
+## Thor Runner Time Limit Removed (2026-04-22)
+- Updated live Thor in `QUANTA_trading_core.py` so post-bank runners are no longer force-closed by elapsed time.
+- Updated `QUANTA_WalkForward_Sim.py` the same way: removed the post-bank `RUNNER_TIMEOUT` exit so WF runner behavior now matches the live price-governed design.
+- Runner exits are now governed by price-state logic only after bank:
+  - breakeven / trail handling
+  - `CHANDELIER_SL`
+  - any other existing structural exit, but not post-bank age
+- Pre-bank timeout remains intact; only the post-bank runner clock was removed.
+- Verification:
+  - `py -3.11 -m py_compile QUANTA_trading_core.py`
+  - `py -3.11 -m py_compile QUANTA_WalkForward_Sim.py`
+
+## Paper Trading State Reset (2026-04-22)
+- Reset `paper_trading_state.json` to a clean paper baseline:
+  - `balance = 10000.0`
+  - `initial_balance = 10000.0`
+  - zero trades / wins / losses / pnl
+  - empty `positions`, `history`, `sl_slippage`, and `sl_blacklist`
+- Reset `trades.csv` back to header-only so the paper ledger cannot bootstrap old trade history on next bot start.
+- Created timestamped backups before reset:
+  - `paper_trading_state.json.bak-reset-20260422_182236`
+  - `trades.csv.bak-reset-20260422_182236`
+
+## Dashboard Thor Barrier Display Fixed (2026-04-22)
+- Fixed `quanta_dashboard.py` so active Thor-executed positions now display exit barriers from the live paper position state itself:
+  - `tp1_price`
+  - `tp2_price`
+  - `tp3_price`
+  - `sl_price`
+- This replaces the incorrect behavior where the dashboard modal could show stale `daily_picks` targets or a generic ATR fallback, which did not match Thor v2 live/WF exit geometry.
+- Result:
+  - Thor position modal now reflects actual executed barrier state instead of alert-level suggestion targets.
+- Verification:
+  - `py -3.11 -m py_compile quanta_dashboard.py`
+
+## Live Thor Sizing Aligned To Actual SL Geometry (2026-04-22)
+- Fixed `QUANTA_trading_core.py` sizing so live Thor v2 now computes stop distance from the actual executed `sl_atr` in `exit_profile` instead of a stale generic `1.5 x ATR` proxy.
+- Before the fix, live notional sizing could overstate size versus the actual MAE-calibrated Thor stop (`3.0 ATR`) because it assumed a much tighter stop than the one actually placed.
+- Result:
+  - live sizing now matches WF sizing semantics more closely:
+    - risk dollars divided by actual stop distance
+    - then capped by the same leverage logic
+- Verification:
+  - `py -3.11 -m py_compile QUANTA_trading_core.py`
+
+## Paper Trading State Reset Again (2026-04-22)
+- Reset `paper_trading_state.json` again to a clean `$10,000` baseline after live paper trades reopened.
+- Cleared all persisted open positions, history, PnL counters, slippage samples, and blacklist state.
+- Reset `trades.csv` back to header-only so old trade history cannot bootstrap back in.
+- Created timestamped backups before reset:
+  - `paper_trading_state.json.bak-reset-20260422_215036`
+  - `trades.csv.bak-reset-20260422_215036`
+
+## Thor Live Paper Path Forced To WF-Sim Parity (2026-04-23)
+- Patched `QUANTA_trading_core.py` and `QUANTA_bot.py` so Thor paper trading now follows the WF sim execution model directly instead of mixing in live-only paper layers.
+- Entry / sizing parity changes:
+  - Thor paper entries bypass live risk-manager trade blocking and loss-throttle sizing.
+  - Thor paper entries no longer route through TWAP; they open with one sim-style synthetic fill.
+  - Entry/exit fee handling for Thor paper now matches WF sim math:
+    - entry fill uses `price * (1 + slippage + commission)` for longs
+    - exit fill uses `price * (1 - slippage - commission)` for longs
+  - Thor cooldown can now run off closed-bar timestamps instead of wall-clock time when bar context is available.
+- Exit / timing parity changes:
+  - Added closed-5m-bar Thor ticking via `PaperTrading.tick_bar(...)`.
+  - Added `_paper_thor_bar_worker()` in `QUANTA_bot.py` so open Thor paper positions are advanced bar-by-bar from live 5m candle data, matching WF sim structure.
+  - Thor paper runner management is now driven from candle `high/low/close` with exact sim-style bar counting (`bars_open`) instead of approximate wall-clock elapsed time.
+  - The old per-symbol `paper.tick(price)` path is skipped for Thor sim-parity positions so price-tick logic cannot interfere with bar-parity logic.
+- Pyramid parity changes:
+  - Thor paper layer-2 add, layer-3 recovery, bank-on-add, and runner trail now evaluate from candle highs/lows exactly like the WF sim.
+- Verification:
+  - `py -3.11 -m py_compile QUANTA_trading_core.py QUANTA_bot.py`
+
+## Paper Trading State Reset After Thor Parity Patch (2026-04-23)
+- Reset `paper_trading_state.json` and `trades.csv` after the Thor live/sim parity patch so the next run starts from a clean identical baseline.
+- Created timestamped backups before reset:
+  - `paper_trading_state.json.bak-reset-20260423_232422`
+  - `trades.csv.bak-reset-20260423_232422`
+- New baseline:
+  - balance `$10,000`
+  - no open positions
+  - empty history
+  - empty slippage / blacklist state
+
+## Dashboard Refactor And Thor Truth Cleanup (2026-04-24)
+- Refactored `templates/dashboard.html` into a new execution-centric dashboard with a cleaner visual system, stronger hierarchy, and clearer Thor/live-paper state presentation.
+- Reworked active-position rendering so Thor-executed positions no longer inherit misleading alert-pick TP/SL ladders from `daily_picks`.
+- Updated `quanta_dashboard.py` overview rows to expose live Thor execution state directly:
+  - `execution_state`
+  - `executed_by`
+  - `thor_bank_hit`
+  - `thor_trail_active`
+  - `runner_peak`
+  - `bank_price`
+- Added a dedicated `/api/thor` endpoint and made Thor dashboard params read from the active Thor exit profile (`paper._build_thor_exit_profile()`), not stale legacy config aliases.
+- Preserved non-Thor/legacy positions separately so the overview can stay Thor-clean without losing backend visibility.
+- Verification:
+  - `py -3.11 -m py_compile quanta_dashboard.py`
+  - local dashboard responded successfully on `http://localhost:5000/`
+  - local API checks succeeded for `/api/overview` and `/api/thor`

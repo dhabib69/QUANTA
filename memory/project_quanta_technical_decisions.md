@@ -616,3 +616,27 @@ n = λ · g̃   where   g̃ = P·ln(1 + f·b) + (1-P)·ln(1 - f)
 
 ### Named After
 Habib Khairul — builder of QUANTA. Derived from original 194× OOS walk-forward simulation, April 2026.
+
+## Thor Paper Execution Parity With WF Sim (2026-04-23)
+
+- Thor paper trading is now intentionally forced to follow the WF sim execution model as the source of truth.
+- For Thor paper positions, live-only execution layers are bypassed:
+  - no risk-manager trade blocking
+  - no loss-throttle sizing
+  - no TWAP routing
+  - no exchange-stop / slippage-blacklist side-effects
+- Thor paper timing now advances on closed 5m bars using candle `high/low/close`, with integer `bars_open`, instead of wall-clock elapsed time.
+- Thor paper fill math now matches WF sim exactly:
+  - long entry fill: `price × (1 + slippage + commission)`
+  - long exit fill: `price × (1 - slippage - commission)`
+- Design intent:
+  - if WF sim says a Thor paper trade should open, size, pyramid, timeout, bank, or trail a certain way, the live paper path should do the same thing under the same candle sequence.
+
+## Dashboard Must Reflect Executed Thor State, Not Alert Picks (2026-04-24)
+
+- The dashboard is now intentionally execution-centric for Thor.
+- Active Thor position cards must read TP/SL/bank/trailing state from the persisted paper/live position object, not from `daily_picks`.
+- `daily_picks` remain alert-layer suggestions only; they are not a valid source of truth for Thor v2 exit geometry.
+- Thor parameter display must read from the active exit profile builder when available (`paper._build_thor_exit_profile()`), because legacy `thor_*` aliases can drift from the calibrated live engine.
+- Design intent:
+  - if the dashboard shows a Thor trade, the numbers should match the engine that is currently managing that trade.

@@ -3,2168 +3,2388 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QUANTA v11.6 Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <title>QUANTA v12.4 Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     :root {
-      --bg-primary: #08090f;
-      --bg-secondary: #0e1019;
-      --bg-card: rgba(16, 18, 32, 0.85);
-      --bg-card-hover: rgba(22, 25, 45, 0.95);
-      --border: rgba(99, 110, 180, 0.12);
-      --border-hover: rgba(99, 110, 180, 0.25);
-      --accent: #6c5ce7;
-      --accent-glow: rgba(108, 92, 231, 0.15);
-      --accent-2: #a29bfe;
-      --green: #00e676;
-      --green-dim: rgba(0, 230, 118, 0.12);
-      --red: #ff5252;
-      --red-dim: rgba(255, 82, 82, 0.12);
-      --yellow: #ffab40;
-      --yellow-dim: rgba(255, 171, 64, 0.12);
-      --cyan: #18ffff;
-      --text-primary: #e8ecf4;
-      --text-secondary: #8892b0;
-      --text-muted: #5a6380;
-      --font: 'Inter', -apple-system, 'Segoe UI', sans-serif;
-      --mono: 'JetBrains Mono', 'Consolas', monospace;
-      --radius-sm: 8px;
-      --radius-md: 12px;
-      --radius-lg: 16px;
-      --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
-      --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.4);
+      --bg: #071019;
+      --bg-2: #0d1821;
+      --panel: rgba(10, 20, 30, 0.84);
+      --panel-solid: #0d1923;
+      --panel-soft: rgba(18, 30, 43, 0.72);
+      --line: rgba(130, 171, 198, 0.14);
+      --line-strong: rgba(130, 171, 198, 0.28);
+      --text: #eaf4fb;
+      --text-soft: #98adbc;
+      --text-muted: #6e8697;
+      --teal: #3ce4c4;
+      --teal-soft: rgba(60, 228, 196, 0.16);
+      --amber: #ffb255;
+      --amber-soft: rgba(255, 178, 85, 0.16);
+      --red: #ff6f61;
+      --red-soft: rgba(255, 111, 97, 0.16);
+      --blue: #79b8ff;
+      --blue-soft: rgba(121, 184, 255, 0.14);
+      --shadow: 0 18px 60px rgba(0, 0, 0, 0.32);
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+      --font: "Space Grotesk", sans-serif;
+      --mono: "IBM Plex Mono", monospace;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
 
     body {
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      font-family: var(--font);
-      font-size: 14px;
-      line-height: 1.5;
       min-height: 100vh;
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 12% 12%, rgba(60, 228, 196, 0.11), transparent 28%),
+        radial-gradient(circle at 88% 18%, rgba(255, 178, 85, 0.12), transparent 25%),
+        radial-gradient(circle at 68% 82%, rgba(121, 184, 255, 0.11), transparent 24%),
+        linear-gradient(180deg, #08131b 0%, #061018 100%);
       overflow-x: hidden;
     }
 
-    /* ═══════════════════ HEADER ═══════════════════ */
-    .header {
-      background: linear-gradient(135deg, rgba(14, 16, 25, 0.95), rgba(20, 22, 38, 0.95));
-      backdrop-filter: blur(20px);
-      border-bottom: 1px solid var(--border);
-      padding: 14px 28px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent 92%);
+      opacity: 0.3;
+    }
+
+    .shell {
+      width: min(1480px, calc(100vw - 32px));
+      margin: 16px auto 28px;
+    }
+
+    .topbar {
       position: sticky;
-      top: 0;
-      z-index: 100;
+      top: 14px;
+      z-index: 50;
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
     }
 
-    .header-brand {
+    .topbar-card,
+    .hero-card,
+    .panel-card,
+    .metric-card,
+    .insight-card,
+    .tech-card,
+    .log-card {
+      background: var(--panel);
+      backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+
+    .brand-card {
+      padding: 20px 24px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      justify-content: space-between;
+      gap: 24px;
+      position: relative;
+      overflow: hidden;
     }
 
-    .header-logo {
-      font-size: 22px;
-      font-weight: 900;
-      letter-spacing: 3px;
-      background: linear-gradient(135deg, #6c5ce7, #a29bfe, #6c5ce7);
-      background-size: 200% 200%;
-      background-clip: text;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      animation: shimmer 3s ease-in-out infinite;
+    .brand-card::after {
+      content: "";
+      position: absolute;
+      inset: auto -10% -55% 35%;
+      height: 220px;
+      background: radial-gradient(circle, rgba(255, 178, 85, 0.18), transparent 70%);
+      pointer-events: none;
     }
 
-    @keyframes shimmer {
-      0%, 100% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
+    .brand-mark {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      position: relative;
+      z-index: 1;
     }
 
-    .version-badge {
-      background: linear-gradient(135deg, var(--accent), #7c6cf0);
-      color: #fff;
-      border-radius: 6px;
-      padding: 3px 10px;
-      font-size: 10px;
+    .brand-bolt {
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      background:
+        linear-gradient(135deg, rgba(60, 228, 196, 0.18), rgba(255, 178, 85, 0.18));
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--amber);
+      font-size: 26px;
       font-weight: 700;
-      letter-spacing: 0.5px;
+    }
+
+    .brand-name {
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 0.94;
+      letter-spacing: -0.06em;
+      font-weight: 700;
+    }
+
+    .brand-sub {
+      margin-top: 6px;
+      font-size: 13px;
+      color: var(--text-soft);
+      letter-spacing: 0.04em;
       text-transform: uppercase;
     }
 
-    .header-status {
-      margin-left: auto;
+    .brand-meta {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      position: relative;
+      z-index: 1;
     }
 
-    .status-dot {
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 12px;
+      color: var(--text-soft);
+      white-space: nowrap;
+    }
+
+    .pill strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .status-led {
       width: 8px;
       height: 8px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 8px var(--green);
-      animation: pulse 2s ease-in-out infinite;
+      border-radius: 999px;
+      background: var(--teal);
+      box-shadow: 0 0 12px rgba(60, 228, 196, 0.8);
+      animation: breathe 2s ease-in-out infinite;
     }
 
-    .status-dot.offline { background: var(--red); box-shadow: 0 0 8px var(--red); }
-    .status-dot.training { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(0.85); }
+    .status-led.offline {
+      background: var(--red);
+      box-shadow: 0 0 12px rgba(255, 111, 97, 0.8);
     }
 
-    .header-clock {
-      font-family: var(--mono);
-      font-size: 12px;
+    .status-led.training {
+      background: var(--amber);
+      box-shadow: 0 0 12px rgba(255, 178, 85, 0.8);
+    }
+
+    @keyframes breathe {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.82); opacity: 0.62; }
+    }
+
+    .meta-card {
+      padding: 18px 22px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    .meta-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
       color: var(--text-muted);
     }
 
-    .header-refresh {
+    .meta-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .meta-tile {
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .meta-label {
       font-size: 11px;
       color: var(--text-muted);
-      opacity: 0.6;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
     }
 
-    /* ═══════════════════ TABS ═══════════════════ */
+    .meta-value {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+
     .tabs {
       display: flex;
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--border);
-      padding: 0 28px;
-      gap: 2px;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 18px;
+      padding: 10px;
+      border-radius: 18px;
+      background: rgba(8, 16, 25, 0.68);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(14px);
     }
 
     .tab {
-      padding: 14px 22px;
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-      color: var(--text-muted);
+      border: 0;
+      border-radius: 14px;
+      background: transparent;
+      color: var(--text-soft);
+      padding: 11px 16px;
+      font: inherit;
       font-size: 13px;
-      font-weight: 500;
-      letter-spacing: 0.3px;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      user-select: none;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: 0.22s ease;
     }
 
-    .tab:hover { color: var(--text-secondary); background: rgba(255,255,255,0.02); }
+    .tab:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
     .tab.active {
-      color: var(--accent-2);
-      border-bottom-color: var(--accent);
-      background: rgba(108, 92, 231, 0.05);
+      color: #041118;
+      background: linear-gradient(135deg, var(--teal), #70efd6);
+      box-shadow: 0 8px 30px rgba(60, 228, 196, 0.24);
     }
 
-    .tab-icon { font-size: 15px; }
-
-    /* ═══════════════════ CONTENT ═══════════════════ */
-    .content {
-      padding: 24px 28px;
-      max-width: 1440px;
-      margin: 0 auto;
+    .panel {
+      display: none;
+      animation: panel-rise 0.28s ease;
     }
 
-    .panel { display: none; animation: fadeIn 0.3s ease; }
-    .panel.active { display: block; }
+    .panel.active {
+      display: block;
+    }
 
-    @keyframes fadeIn {
+    @keyframes panel-rise {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
     }
 
-    /* ═══════════════════ GRID ═══════════════════ */
-    .grid { display: grid; gap: 16px; }
-    .grid-2 { grid-template-columns: 1fr 1fr; }
-    .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
-    .grid-4 { grid-template-columns: repeat(4, 1fr); }
-    .grid-5 { grid-template-columns: repeat(5, 1fr); }
-    .mb { margin-bottom: 16px; }
-    .mb-lg { margin-bottom: 24px; }
+    .section-stack {
+      display: grid;
+      gap: 18px;
+    }
 
-    /* ═══════════════════ CARDS ═══════════════════ */
-    .card {
-      background: var(--bg-card);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 20px;
-      transition: all 0.25s ease;
+    .hero-card {
+      padding: 24px;
       position: relative;
       overflow: hidden;
     }
 
-    .card::before {
-      content: '';
+    .hero-card::before {
+      content: "";
       position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(108, 92, 231, 0.3), transparent);
-      opacity: 0;
-      transition: opacity 0.3s;
+      inset: 0;
+      background:
+        linear-gradient(115deg, rgba(60, 228, 196, 0.12), transparent 40%),
+        linear-gradient(320deg, rgba(255, 178, 85, 0.14), transparent 45%);
+      pointer-events: none;
     }
 
-    .card:hover {
-      border-color: var(--border-hover);
-      transform: translateY(-1px);
-      box-shadow: var(--shadow);
-    }
-
-    .card:hover::before { opacity: 1; }
-
-    .card-title {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
-      color: var(--text-muted);
-      margin-bottom: 14px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .card-title .icon { font-size: 14px; }
-
-    /* ═══════════════════ METRICS ═══════════════════ */
-    .metric {
-      font-size: 32px;
-      font-weight: 800;
-      letter-spacing: -0.5px;
-      line-height: 1.1;
-    }
-
-    .metric-sm {
-      font-size: 24px;
-      font-weight: 700;
-    }
-
-    .metric.green { color: var(--green); }
-    .metric.red { color: var(--red); }
-    .metric.yellow { color: var(--yellow); }
-    .metric.accent { color: var(--accent-2); }
-    .metric.cyan { color: var(--cyan); }
-
-    .metric-label {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-top: 6px;
-      font-weight: 400;
-    }
-
-    .metric-sub {
-      font-size: 11px;
-      color: var(--text-muted);
-      margin-top: 4px;
-      font-family: var(--mono);
-    }
-
-    /* Stat row inside cards */
-    .stat-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px 0;
-      border-bottom: 1px solid rgba(255,255,255,0.03);
-    }
-
-    .stat-row:last-child { border-bottom: none; }
-    .stat-label { color: var(--text-secondary); font-size: 13px; }
-    .stat-value { font-weight: 600; font-family: var(--mono); font-size: 13px; }
-
-    /* ═══════════════════ TABLES ═══════════════════ */
-    table { width: 100%; border-collapse: collapse; }
-    
-    tr.clickable { cursor: pointer; transition: background 0.2s ease; }
-    tr.clickable:hover { background: rgba(255,255,255,0.05); }
-
-    th {
-      color: var(--text-muted);
-      text-transform: uppercase;
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 1px;
-      padding: 10px 14px;
-      text-align: left;
-      border-bottom: 1px solid var(--border);
-      background: rgba(0, 0, 0, 0.15);
-    }
-
-    td {
-      padding: 10px 14px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-      font-size: 13px;
-    }
-
-    tr { transition: background 0.15s; }
-    tr:hover td { background: rgba(108, 92, 231, 0.04); }
-
-    .table-empty {
-      color: var(--text-muted);
-      text-align: center;
-      padding: 24px;
-      font-style: italic;
-    }
-
-    /* ═══════════════════ TAGS ═══════════════════ */
-    .tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 3px 10px;
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.3px;
-    }
-
-    .tag.bull { background: var(--green-dim); color: var(--green); }
-    .tag.bear { background: var(--red-dim); color: var(--red); }
-    .tag.neutral { background: var(--yellow-dim); color: var(--yellow); }
-    .tag.ready { background: var(--green-dim); color: var(--green); }
-    .tag.offline { background: var(--red-dim); color: var(--red); }
-    .tag.accent { background: var(--accent-glow); color: var(--accent-2); }
-
-    /* ═══════════════════ CHARTS ═══════════════════ */
-    canvas { max-height: 240px; }
-
-    /* ═══════════════════ LOG BOX ═══════════════════ */
-    .log-box {
-      background: rgba(4, 5, 10, 0.8);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 14px 16px;
-      font-family: var(--mono);
-      font-size: 11px;
-      line-height: 1.7;
-      max-height: 340px;
-      overflow-y: auto;
-      color: var(--text-secondary);
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-
-    .log-box::-webkit-scrollbar { width: 6px; }
-    .log-box::-webkit-scrollbar-track { background: transparent; }
-    .log-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-    /* ═══════════════════ AGENT CARDS ═══════════════════ */
-    .agent-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 14px;
-    }
-
-    .agent-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 16px;
-      transition: all 0.25s ease;
+    .hero-grid {
       position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 18px;
+      align-items: end;
     }
 
-    .agent-card:hover {
-      border-color: var(--accent);
-      box-shadow: 0 0 20px var(--accent-glow);
-      transform: translateY(-2px);
-    }
-
-    .agent-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    .hero-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-muted);
       margin-bottom: 10px;
     }
 
-    .agent-avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-      background: linear-gradient(135deg, var(--accent-glow), rgba(162, 155, 254, 0.1));
-      border: 1px solid rgba(108, 92, 231, 0.2);
+    .hero-headline {
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 0.92;
+      letter-spacing: -0.065em;
+      font-weight: 700;
+      max-width: 12ch;
     }
 
-    .agent-name {
-      font-weight: 700;
+    .hero-copy {
+      margin-top: 14px;
+      max-width: 54ch;
+      color: var(--text-soft);
       font-size: 14px;
-      text-transform: capitalize;
-      letter-spacing: 0.5px;
+      line-height: 1.75;
     }
 
-    .agent-desc {
-      font-size: 11px;
-      color: var(--text-muted);
-      line-height: 1.4;
-      margin-bottom: 12px;
-    }
-
-    .agent-stats {
-      display: flex;
-      gap: 16px;
-    }
-
-    .agent-stat {
-      flex: 1;
-    }
-
-    .agent-stat-label {
-      font-size: 10px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .agent-stat-value {
-      font-size: 15px;
-      font-weight: 700;
-      font-family: var(--mono);
-      margin-top: 2px;
-    }
-
-    /* ═══════════════════ BRIER BARS ═══════════════════ */
-    .brier-row {
-      display: flex;
-      align-items: center;
+    .hero-side {
+      display: grid;
       gap: 12px;
-      padding: 8px 0;
     }
 
-    .brier-name {
-      width: 90px;
-      font-weight: 600;
+    .hero-kicker {
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .hero-kicker .eyebrow {
+      margin-bottom: 8px;
+    }
+
+    .hero-kicker strong {
+      display: block;
+      font-size: 22px;
+      letter-spacing: -0.05em;
+      margin-bottom: 4px;
+    }
+
+    .hero-kicker span {
+      color: var(--text-soft);
       font-size: 12px;
-      text-transform: capitalize;
     }
 
-    .brier-bar-bg {
-      flex: 1;
-      background: rgba(255, 255, 255, 0.03);
-      border-radius: 4px;
-      height: 8px;
+    .metric-row,
+    .three-grid,
+    .two-grid,
+    .four-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .metric-row {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .three-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .two-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .four-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .metric-card {
+      padding: 18px;
+      position: relative;
       overflow: hidden;
     }
 
-    .brier-bar-fill {
-      height: 100%;
-      border-radius: 4px;
-      transition: width 0.6s ease;
+    .metric-card::after {
+      content: "";
+      position: absolute;
+      inset: auto -10% -45% auto;
+      width: 160px;
+      height: 160px;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.06), transparent 72%);
+      pointer-events: none;
     }
 
-    .brier-value {
-      width: 55px;
-      text-align: right;
-      font-size: 12px;
-      font-family: var(--mono);
-      color: var(--text-secondary);
-    }
-
-    /* ═══════════════════ RISK EVENTS ═══════════════════ */
-    .risk-event {
+    .metric-top {
       display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .metric-title {
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .metric-value {
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 0.95;
+      letter-spacing: -0.07em;
+      font-weight: 700;
+    }
+
+    .metric-foot {
+      font-size: 12px;
+      color: var(--text-soft);
+    }
+
+    .tone-teal .metric-value,
+    .tone-teal strong {
+      color: var(--teal);
+    }
+
+    .tone-amber .metric-value,
+    .tone-amber strong {
+      color: var(--amber);
+    }
+
+    .tone-red .metric-value,
+    .tone-red strong {
+      color: var(--red);
+    }
+
+    .tone-blue .metric-value,
+    .tone-blue strong {
+      color: var(--blue);
+    }
+
+    .panel-card,
+    .log-card,
+    .tech-card,
+    .insight-card {
+      padding: 20px;
+    }
+
+    .panel-header,
+    .card-header {
+      display: flex;
+      justify-content: space-between;
       align-items: center;
       gap: 12px;
-      padding: 8px 12px;
-      border-radius: var(--radius-sm);
-      background: rgba(255, 82, 82, 0.04);
-      border: 1px solid rgba(255, 82, 82, 0.08);
-      margin-bottom: 6px;
-      font-size: 12px;
+      margin-bottom: 16px;
     }
 
-    .risk-event .re-type {
-      font-weight: 600;
-      color: var(--yellow);
-      font-family: var(--mono);
-      font-size: 10px;
-      text-transform: uppercase;
-      min-width: 100px;
-    }
-
-    .risk-event .re-detail { color: var(--text-secondary); flex: 1; }
-
-    /* ═══════════════════ DRIFT ALERT ═══════════════════ */
-    .drift-alert {
-      background: rgba(255, 171, 64, 0.06);
-      border: 1px solid rgba(255, 171, 64, 0.15);
-      border-radius: var(--radius-sm);
-      padding: 10px 14px;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      color: var(--yellow);
-    }
-
-    /* ═══════════════════ SECTION TITLE ═══════════════════ */
-    .section-title {
-      font-size: 13px;
+    .card-title {
+      font-size: 15px;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
+      letter-spacing: -0.03em;
+    }
+
+    .card-copy {
+      color: var(--text-soft);
+      font-size: 13px;
+      line-height: 1.65;
+      margin-bottom: 16px;
+    }
+
+    .toggle-group {
+      display: inline-flex;
+      gap: 6px;
+      padding: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .toggle-group button {
+      border: 0;
+      background: transparent;
       color: var(--text-muted);
-      margin-bottom: 14px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 7px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+
+    .toggle-group button.active {
+      color: #041118;
+      background: linear-gradient(135deg, var(--amber), #ffd09a);
+    }
+
+    .sub-filters {
       display: flex;
+      justify-content: space-between;
       align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .sub-filters .note {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .callout {
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 111, 97, 0.22);
+      background: linear-gradient(135deg, rgba(255, 111, 97, 0.12), rgba(255, 111, 97, 0.05));
+      color: #ffd7d1;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .callout strong {
+      color: #fff0ec;
+    }
+
+    .card-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .stat-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 13px;
+    }
+
+    .stat-line:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .stat-key {
+      color: var(--text-soft);
+    }
+
+    .stat-val {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text);
+      text-align: right;
+    }
+
+    .status-chip,
+    .result-chip,
+    .phase-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .status-chip.live,
+    .result-chip.win,
+    .phase-chip.runner {
+      background: var(--teal-soft);
+      color: var(--teal);
+    }
+
+    .status-chip.paused,
+    .result-chip.loss,
+    .phase-chip.risk {
+      background: var(--red-soft);
+      color: var(--red);
+    }
+
+    .status-chip.training,
+    .phase-chip.bank {
+      background: var(--amber-soft);
+      color: var(--amber);
+    }
+
+    .status-chip.idle,
+    .phase-chip.pre {
+      background: var(--blue-soft);
+      color: var(--blue);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 680px;
+    }
+
+    th {
+      text-align: left;
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 13px;
+      color: var(--text-soft);
+      vertical-align: middle;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    tbody tr.clickable {
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+
+    tbody tr.clickable:hover td {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+    }
+
+    .symbol-cell {
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .mono {
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    .faint {
+      color: var(--text-muted);
+    }
+
+    .table-empty,
+    .empty-state {
+      padding: 26px 18px;
+      color: var(--text-muted);
+      font-size: 13px;
+      text-align: center;
+      font-style: italic;
+    }
+
+    .bar-row {
+      display: grid;
       gap: 8px;
     }
 
-    .section-title::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: linear-gradient(90deg, var(--border), transparent);
+    .bar-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--text-soft);
     }
 
-    /* ═══════════════════ CLICKABLE AGENT CARDS ═══════════════════ */
-    .agent-card.clickable { cursor: pointer; }
-    .agent-card.clickable::after {
-      content: 'Click for details →';
-      position: absolute; bottom: 8px; right: 12px;
-      font-size: 9px; color: var(--text-muted); opacity: 0;
-      transition: opacity 0.3s;
+    .bar-track {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      overflow: hidden;
     }
-    .agent-card.clickable:hover::after { opacity: 1; }
 
-    /* ═══════════════════ MODAL ═══════════════════ */
-    .modal-overlay {
-      display: none; position: fixed; inset: 0; z-index: 1000;
-      background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
-      align-items: center; justify-content: center;
-      animation: fadeIn 0.2s ease;
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--teal), #7bf2da);
+      transition: width 0.25s ease;
     }
-    .modal-overlay.open { display: flex; }
-    .modal {
-      background: linear-gradient(145deg, #0e1019, #141628);
-      border: 1px solid var(--border-hover);
-      border-radius: var(--radius-lg); padding: 0;
-      width: 640px; max-width: 92vw; max-height: 85vh;
-      overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-      animation: slideUp 0.3s ease;
+
+    canvas {
+      width: 100%;
+      max-height: 290px;
     }
-    @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-    .modal::-webkit-scrollbar { width: 6px; }
-    .modal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-    .modal-header {
-      display: flex; align-items: center; gap: 14px;
-      padding: 24px 28px 16px; border-bottom: 1px solid var(--border);
-      position: sticky; top: 0; background: rgba(14,16,25,0.98); z-index: 2;
+
+    .feed-list,
+    .event-list,
+    .log-box,
+    .alerts {
+      display: grid;
+      gap: 10px;
     }
-    .modal-header .agent-avatar { width: 48px; height: 48px; font-size: 26px; border-radius: 14px; }
-    .modal-header h2 { font-size: 20px; font-weight: 800; text-transform: capitalize; letter-spacing: 1px; }
-    .modal-header .tag { margin-left: 8px; }
-    .modal-close {
-      margin-left: auto; background: none; border: 1px solid var(--border);
-      color: var(--text-muted); width: 32px; height: 32px; border-radius: 8px;
-      cursor: pointer; font-size: 16px; display: flex; align-items: center;
-      justify-content: center; transition: all 0.2s;
+
+    .feed-item,
+    .event-item,
+    .alert-item {
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
     }
-    .modal-close:hover { border-color: var(--red); color: var(--red); }
-    .modal-body { padding: 20px 28px 28px; }
-    .modal-section { margin-bottom: 20px; }
-    .modal-section h3 {
-      font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
-      color: var(--accent-2); margin-bottom: 10px; font-weight: 700;
+
+    .feed-item h4,
+    .event-item h4,
+    .alert-item h4 {
+      font-size: 13px;
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
     }
-    .modal-section p { font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
-    .math-block {
-      background: rgba(0,0,0,0.4); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 14px 18px;
-      font-family: var(--mono); font-size: 13px; color: var(--cyan);
-      line-height: 1.8; margin: 10px 0; overflow-x: auto; white-space: pre;
+
+    .feed-item p,
+    .event-item p,
+    .alert-item p {
+      font-size: 12px;
+      color: var(--text-soft);
+      line-height: 1.65;
     }
-    .modal-stats {
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
-      margin: 14px 0;
-    }
-    .modal-stat {
-      background: rgba(255,255,255,0.02); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 12px; text-align: center;
-      position: relative;
-    }
-    .modal-stat .label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-    .modal-stat .val { font-size: 18px; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
-    .barrier-hit-icon {
-      position: absolute; top: 6px; right: 6px;
-      width: 14px; height: 14px; 
-      border-radius: 50%; display: flex;
-      align-items: center; justify-content: center;
-      font-size: 8px; font-weight: 800;
-      border: 1px solid rgba(255,255,255,0.1);
-      color: transparent;
-      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
-    .barrier-hit-icon.hit {
-      background: var(--green);
-      color: #fff;
-      border-color: var(--green);
-      transform: scale(1.1);
-      box-shadow: 0 0 10px rgba(0,255,150,0.3);
-    }
-    .barrier-hit-icon.hit.sl {
-      background: var(--red);
-      border-color: var(--red);
-      box-shadow: 0 0 10px rgba(255,82,82,0.3);
-    }
-    .dist-tag {
-      font-size: 9px; opacity: 0.5; margin-top: 2px;
+
+    .feed-meta,
+    .event-meta {
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--text-muted);
       font-family: var(--mono);
     }
-    @keyframes popIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
-    /* ═══════════════════ TECH FEATURE CARDS ═══════════════════ */
-    .tech-card {
-      background: var(--bg-card); border: 1px solid var(--border);
-      border-radius: var(--radius-lg); padding: 24px;
-      transition: all 0.3s ease; position: relative; overflow: hidden;
+    .log-box {
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: #081118;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.75;
+      color: #a8c0cf;
+      min-height: 360px;
+      max-height: 520px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
-    .tech-card::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-      background: linear-gradient(90deg, var(--accent), var(--cyan));
-      opacity: 0; transition: opacity 0.3s;
-    }
-    .tech-card:hover { border-color: var(--border-hover); transform: translateY(-2px); box-shadow: var(--shadow-lg); }
-    .tech-card:hover::before { opacity: 1; }
-    .tech-card-icon { font-size: 28px; margin-bottom: 12px; }
-    .tech-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--text-primary); }
-    .tech-card .tech-subtitle { font-size: 11px; color: var(--accent-2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
-    .tech-card p { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 12px; }
-    .tech-card .math-block { font-size: 11px; margin: 8px 0; padding: 10px 14px; }
-    .tech-card .tech-ref { font-size: 10px; color: var(--text-muted); font-style: italic; }
-    .tech-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
 
-    .card-header-flex {
-      display: flex; justify-content: space-between; align-items: center;
+    .tech-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .tech-card h3 {
+      font-size: 18px;
+      letter-spacing: -0.03em;
+      margin-bottom: 10px;
+    }
+
+    .tech-card p {
+      font-size: 13px;
+      line-height: 1.75;
+      color: var(--text-soft);
+      margin-bottom: 12px;
+    }
+
+    .math-block {
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.7;
+      color: #cfe1ed;
+      white-space: pre-wrap;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      background: rgba(2, 8, 12, 0.72);
+      backdrop-filter: blur(12px);
+      z-index: 120;
+      padding: 20px;
+    }
+
+    .modal-overlay.open {
+      display: grid;
+      animation: panel-rise 0.24s ease;
+    }
+
+    .modal {
+      width: min(860px, 100%);
+      max-height: min(92vh, 920px);
+      overflow: auto;
+      background: linear-gradient(180deg, rgba(10, 20, 30, 0.98), rgba(8, 17, 24, 0.98));
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-xl);
+      box-shadow: 0 22px 80px rgba(0, 0, 0, 0.52);
+    }
+
+    .modal-head {
+      padding: 22px 24px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .modal-title {
+      font-size: 28px;
+      letter-spacing: -0.05em;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .modal-sub {
+      color: var(--text-soft);
+      font-size: 13px;
+    }
+
+    .modal-close {
+      border: 0;
+      width: 40px;
+      height: 40px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-soft);
+      font: inherit;
+      font-size: 20px;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+
+    .modal-close:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+    }
+
+    .modal-body {
+      padding: 20px 24px 24px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .modal-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .modal-card {
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .modal-card .eyebrow {
+      margin-bottom: 8px;
+    }
+
+    .modal-card strong {
+      display: block;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.05em;
       margin-bottom: 4px;
     }
-    .table-toggle {
-      display: flex; background: rgba(0,0,0,0.2); border-radius: 8px;
-      padding: 3px; border: 1px solid var(--border);
-    }
-    .table-toggle button {
-      background: none; border: none; font-size: 10px; color: var(--text-muted);
-      padding: 4px 10px; border-radius: 6px; cursor: pointer;
-      font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
-      transition: all 0.2s;
-    }
-    .table-toggle button.active {
-      background: var(--accent-2); color: #fff;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-    }
-    .res-badge {
-      font-size: 9px; padding: 2px 6px; border-radius: 4px;
-      font-weight: 800; font-family: var(--mono);
-    }
-    .res-badge.tp { background: rgba(0,255,150,0.1); color: var(--green); border: 1px solid rgba(0,255,150,0.2); }
-    .res-badge.sl { background: rgba(255,82,82,0.1); color: var(--red); border: 1px solid rgba(255,82,82,0.2); }
 
-    /* ═══════════════════ RESPONSIVE ═══════════════════ */
-    @media (max-width: 1024px) {
-      .grid-4 { grid-template-columns: repeat(2, 1fr); }
-      .grid-5 { grid-template-columns: repeat(3, 1fr); }
-      .modal-stats { grid-template-columns: repeat(2, 1fr); }
+    .modal-card span {
+      font-size: 12px;
+      color: var(--text-soft);
+      line-height: 1.5;
     }
-    @media (max-width: 768px) {
-      .grid-2, .grid-3, .grid-4, .grid-5 { grid-template-columns: 1fr; }
-      .content { padding: 16px; }
-      .header { padding: 12px 16px; }
-      .tabs { padding: 0 16px; overflow-x: auto; }
-      .tech-grid { grid-template-columns: 1fr; }
-      .modal-stats { grid-template-columns: 1fr 1fr; }
+
+    @media (max-width: 1180px) {
+      .topbar,
+      .hero-grid,
+      .metric-row,
+      .three-grid,
+      .four-grid,
+      .two-grid,
+      .tech-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .shell {
+        width: min(100vw - 20px, 1480px);
+      }
+
+      .topbar,
+      .hero-grid,
+      .metric-row,
+      .three-grid,
+      .four-grid,
+      .two-grid,
+      .tech-grid,
+      .modal-grid,
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .brand-card,
+      .meta-card,
+      .hero-card,
+      .panel-card,
+      .metric-card,
+      .insight-card,
+      .tech-card {
+        padding: 18px;
+      }
+
+      .brand-card {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .brand-meta {
+        justify-content: flex-start;
+      }
+
+      .tab {
+        flex: 1 1 calc(50% - 10px);
+        text-align: center;
+      }
+
+      .modal-head,
+      .modal-body {
+        padding: 18px;
+      }
     }
   </style>
 </head>
 <body>
-
-<!-- ═══════════════════ HEADER ═══════════════════ -->
-<div class="header">
-  <div class="header-brand">
-    <span class="header-logo">⚡ QUANTA</span>
-    <span class="version-badge">v11.6</span>
-  </div>
-  <div class="header-status">
-    <div class="status-dot" id="status-dot"></div>
-    <span id="status-text" style="font-size:12px;color:var(--text-secondary)">Connecting...</span>
-    <span class="header-clock" id="live-clock"></span>
-    <span class="header-refresh">auto-refresh 5s</span>
-  </div>
-</div>
-
-<!-- ═══════════════════ TABS ═══════════════════ -->
-<div class="tabs">
-  <div class="tab active" onclick="showTab('overview')">
-    <span class="tab-icon">📊</span> Overview
-  </div>
-  <div class="tab" onclick="showTab('norse')">
-    <span class="tab-icon">⚡</span> Norse
-  </div>
-  <div class="tab" onclick="showTab('predictions')">
-    <span class="tab-icon">🎯</span> Predictions
-  </div>
-  <div class="tab" onclick="showTab('models')">
-    <span class="tab-icon">🧠</span> Models
-  </div>
-  <div class="tab" onclick="showTab('system')">
-    <span class="tab-icon">🖥️</span> System
-  </div>
-  <div class="tab" onclick="showTab('settings')">
-    <span class="tab-icon">⚡</span> ZEUS.ai
-  </div>
-  <div class="tab" onclick="showTab('tech')">
-    <span class="tab-icon">🔬</span> Technology
-  </div>
-</div>
-
-<!-- ═══════════════════ OVERVIEW TAB ═══════════════════ -->
-<div id="tab-overview" class="content panel active">
-
-  <!-- KPI Cards -->
-  <div class="grid grid-5 mb">
-    <div class="card">
-      <div class="card-title"><span class="icon">💰</span> Balance</div>
-      <div class="metric green" id="balance">$0.00</div>
-      <div class="metric-label">paper trading</div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">📈</span> Total P&L</div>
-      <div class="metric" id="pnl">$0.00</div>
-      <div class="metric-sub" id="pnl-pct">0.00%</div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">📊</span> Win Rate</div>
-      <div class="metric yellow" id="win-rate">—</div>
-      <div class="metric-sub" id="win-sub">0W / 0L</div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">🎲</span> Open Positions</div>
-      <div class="metric accent" id="open-pos">0</div>
-      <div class="metric-sub" id="pos-sub">active trades</div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">📉</span> Max Drawdown</div>
-      <div class="metric red" id="max-dd">0.00%</div>
-      <div class="metric-sub" id="current-dd">current: 0.00%</div>
-    </div>
-  </div>
-
-  <!-- Charts + Live Positions -->
-  <div class="grid grid-2 mb">
-    <div class="card">
-      <div class="card-title"><span class="icon">📈</span> Equity Curve</div>
-      <canvas id="equityChart"></canvas>
-    </div>
-    <div class="card">
-      <div class="card-header-flex">
-        <div class="card-title"><span class="icon">⚡</span> <span id="pos-card-header">Open Positions</span></div>
-        <div class="table-toggle">
-          <button id="toggle-active" class="active" onclick="togglePosView('active')">Active</button>
-          <button id="toggle-history" onclick="togglePosView('history')">History</button>
-        </div>
-      </div>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead>
-            <tr><th>Symbol</th><th>Direction</th><th>Entry</th><th>Size</th><th>Conf</th></tr>
-          </thead>
-          <tbody id="positions-body">
-            <tr><td colspan="5" class="table-empty">No open positions</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- Secondary stats -->
-  <div class="grid grid-3 mb">
-    <div class="card">
-      <div class="card-title"><span class="icon">😨</span> Fear & Greed</div>
-      <div class="metric" id="fg-value" style="color:var(--yellow)">—</div>
-      <div class="metric-label" id="fg-label">loading...</div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">🧠</span> RL Memory</div>
-      <div class="stat-row"><span class="stat-label">Buffer Size</span><span class="stat-value" id="rl-buffer">—</span></div>
-      <div class="stat-row"><span class="stat-label">Predictions</span><span class="stat-value" id="rl-total">—</span></div>
-      <div class="stat-row"><span class="stat-label">Pending</span><span class="stat-value" id="rl-pending">—</span></div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">🛡️</span> Risk Status</div>
-      <div class="stat-row"><span class="stat-label">Trading</span><span class="stat-value" id="risk-paused" style="color:var(--green)">Active</span></div>
-      <div class="stat-row"><span class="stat-label">Daily P&L</span><span class="stat-value" id="risk-daily-pnl">$0.00</span></div>
-      <div class="stat-row"><span class="stat-label">Loss Streak</span><span class="stat-value" id="risk-streak">0</span></div>
-    </div>
-  </div>
-
-  <!-- Drift Alerts -->
-  <div id="drift-alerts-container" style="display:none;" class="mb"></div>
-</div>
-
-<!-- ═══════════════════ NORSE TAB ═══════════════════ -->
-<div id="tab-norse" class="content panel">
-
-  <!-- Hero result -->
-  <div class="grid grid-3 mb">
-    <div class="card" style="border-color:rgba(0,230,118,0.3);background:rgba(0,230,118,0.04);">
-      <div class="card-title"><span class="icon">🚀</span> 1-Year Simulation Result</div>
-      <div class="metric green" style="font-size:48px;">191x</div>
-      <div class="metric-label">$10,000 → $1,922,607 · +19,126%</div>
-      <div class="metric-sub" style="margin-top:8px;">727 trades · Max DD 43.74% · NO liquidation</div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">📐</span> Edge Statistics</div>
-      <div class="stat-row"><span class="stat-label">Profit Factor</span><span class="stat-value" style="color:var(--green)">2.376</span></div>
-      <div class="stat-row"><span class="stat-label">TP Rate</span><span class="stat-value">49.79%</span></div>
-      <div class="stat-row"><span class="stat-label">Decided Win Rate</span><span class="stat-value">50.49%</span></div>
-      <div class="stat-row"><span class="stat-label">Avg PnL / Trade</span><span class="stat-value" style="color:var(--green)">+$2,630</span></div>
-      <div class="stat-row"><span class="stat-label">Avg Hold</span><span class="stat-value">30 bars</span></div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">🔬</span> Optuna Search</div>
-      <div class="stat-row"><span class="stat-label">Trials</span><span class="stat-value">2,400</span></div>
-      <div class="stat-row"><span class="stat-label">Best Score</span><span class="stat-value" style="color:var(--accent-2)">15.6361</span></div>
-      <div class="stat-row"><span class="stat-label">Method</span><span class="stat-value" style="font-size:11px">TPE + Walk-Forward</span></div>
-      <div class="stat-row"><span class="stat-label">OOS Folds</span><span class="stat-value">5 · Calmar &gt;4 all</span></div>
-      <div class="stat-row"><span class="stat-label">Symbols</span><span class="stat-value">218</span></div>
-    </div>
-  </div>
-
-  <!-- Walk-forward folds -->
-  <div class="grid grid-2 mb">
-    <div class="card">
-      <div class="card-title"><span class="icon">📊</span> Walk-Forward Fold Results (OOS)</div>
-      <table>
-        <thead><tr><th>Fold</th><th>Trades</th><th>Calmar</th><th>Growth%</th><th>MaxDD%</th><th>PF</th></tr></thead>
-        <tbody>
-          <tr><td>0</td><td>35</td><td style="color:var(--green)">19.84</td><td>+56.95%</td><td>2.87%</td><td>5.860</td></tr>
-          <tr><td>1</td><td>31</td><td style="color:var(--green)">25.08</td><td>+42.48%</td><td>1.69%</td><td>6.422</td></tr>
-          <tr><td>2</td><td>44</td><td style="color:var(--yellow)">4.35</td><td>+28.90%</td><td>6.64%</td><td>2.423</td></tr>
-          <tr><td>3</td><td>95</td><td style="color:var(--green)">17.85</td><td>+117.25%</td><td>6.57%</td><td>2.559</td></tr>
-          <tr><td>4</td><td>44</td><td style="color:var(--yellow)">4.47</td><td>+17.33%</td><td>3.88%</td><td>1.857</td></tr>
-          <tr style="border-top:1px solid var(--border);font-weight:700"><td>Median</td><td>—</td><td style="color:var(--green)">17.85</td><td>—</td><td>—</td><td>—</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">🏆</span> Top Big Wins</div>
-      <table>
-        <thead><tr><th>Symbol</th><th>Net PnL</th><th>ATR</th><th>Why</th></tr></thead>
-        <tbody>
-          <tr><td><b>XPLUSDT</b></td><td style="color:var(--green)">+$235,722</td><td>+10.88</td><td style="font-size:11px;color:var(--text-muted)">runner capture</td></tr>
-          <tr><td><b>DODOXUSDT</b></td><td style="color:var(--green)">+$215,026</td><td>+11.85</td><td style="font-size:11px;color:var(--text-muted)">runner capture</td></tr>
-          <tr><td><b>BANUSDT</b></td><td style="color:var(--green)">+$172,810</td><td>+8.82</td><td style="font-size:11px;color:var(--text-muted)">low top-risk trend</td></tr>
-          <tr><td><b>RESOLVUSDT</b></td><td style="color:var(--green)">+$138,731</td><td>+9.36</td><td style="font-size:11px;color:var(--text-muted)">low top-risk trend</td></tr>
-          <tr><td><b>JELLYJELLYUSDT</b></td><td style="color:var(--green)">+$118,931</td><td>+11.23</td><td style="font-size:11px;color:var(--text-muted)">low top-risk trend</td></tr>
-          <tr><td><b>STEEMUSDT</b></td><td style="color:var(--green)">+$112,786</td><td>+6.44</td><td style="font-size:11px;color:var(--text-muted)">runner capture</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Active optimized params -->
-  <div class="section-title mb"><span>⚙️</span> Active Optimized Parameters (Live in Bot)</div>
-  <div class="grid grid-3 mb">
-    <div class="card">
-      <div class="card-title"><span class="icon">⚔️</span> Thor Entry Filters</div>
-      <div class="stat-row"><span class="stat-label">Score Floor</span><span class="stat-value" style="color:var(--accent-2)">68.0</span></div>
-      <div class="stat-row"><span class="stat-label">Tiers</span><span class="stat-value">A, B</span></div>
-      <div class="stat-row"><span class="stat-label">Wave Strength Min</span><span class="stat-value">40.0</span></div>
-      <div class="stat-row"><span class="stat-label">Top-Risk Max</span><span class="stat-value">70.0</span></div>
-      <div class="stat-row"><span class="stat-label">MAE Veto</span><span class="stat-value">8.00 ATR</span></div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">🛑</span> Thor Exit Management</div>
-      <div class="stat-row"><span class="stat-label">Stop Loss</span><span class="stat-value" style="color:var(--red)">2.40 ATR</span></div>
-      <div class="stat-row"><span class="stat-label">Bank Level</span><span class="stat-value" style="color:var(--green)">5.40 ATR @ 45%</span></div>
-      <div class="stat-row"><span class="stat-label">Trail Activate</span><span class="stat-value">1.00 ATR</span></div>
-      <div class="stat-row"><span class="stat-label">Trail Gap</span><span class="stat-value">6.00 ATR</span></div>
-      <div class="stat-row"><span class="stat-label">Baldur Exit Score</span><span class="stat-value">65.0</span></div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">📊</span> Pump Analytics</div>
-      <div class="stat-row"><span class="stat-label">Pumps Recorded</span><span class="stat-value">1,031</span></div>
-      <div class="stat-row"><span class="stat-label">Median Max Run-Up</span><span class="stat-value" style="color:var(--green)">5.40 ATR</span></div>
-      <div class="stat-row"><span class="stat-label">Median Max Drawdown</span><span class="stat-value" style="color:var(--red)">5.00 ATR</span></div>
-      <div class="stat-row"><span class="stat-label">Any Green (≥0 ATR)</span><span class="stat-value">99.9%</span></div>
-      <div class="stat-row"><span class="stat-label">Reach ≥0.5 ATR</span><span class="stat-value">94.4%</span></div>
-    </div>
-  </div>
-
-  <!-- Key insight -->
-  <div class="card" style="border-color:rgba(108,92,231,0.3);background:rgba(108,92,231,0.04);">
-    <div class="card-title"><span class="icon">💡</span> Mathematical Edge Summary</div>
-    <div class="grid grid-3" style="margin-top:8px;">
-      <div class="math-block" style="margin:0">E[trade] = 0.4979 × 2.376L − 0.5021 × L
-       = +0.681L per trade
-
-Kelly% ≈ 28.7% (near full Kelly)
-Geo. return = 191.26^(1/727) − 1
-            ≈ +0.726% per trade</div>
-      <div class="math-block" style="margin:0">Big winners (≥+2.0 ATR):
-  Count:           734 / 1031
-  Median deepest red:  5.53 ATR
-  Mean deepest red:    5.85 ATR
-
-→ SL at 2.40 ATR is load-bearing.
-  Tightening it kills the right tail.</div>
-      <div class="math-block" style="margin:0">Top learned features (SL=2.4):
-  + wave_strength_at_entry  +0.278
-  + weighted_trend           +0.304
-  − pre_impulse_r2          −0.225
-  − nike_score               −0.205
-  − bs_prob                  −0.130</div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════ PREDICTIONS TAB ═══════════════════ -->
-<div id="tab-predictions" class="content panel">
-  <div class="grid grid-2 mb">
-    <div class="card">
-      <div class="card-title"><span class="icon">🎯</span> Live Alerts</div>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead>
-            <tr><th>Time</th><th>Symbol</th><th>Direction</th><th>Conf</th><th>Status</th><th>Entry</th></tr>
-          </thead>
-          <tbody id="preds-body">
-            <tr><td colspan="6" class="table-empty">Waiting for predictions...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">✅</span> RL Outcomes</div>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead>
-            <tr><th>Symbol</th><th>Direction</th><th>Conf</th><th>Outcome</th><th>Move</th></tr>
-          </thead>
-          <tbody id="outcomes-body">
-            <tr><td colspan="5" class="table-empty">Waiting for outcomes (need 1h)...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-title"><span class="icon">📊</span> Outcome Distribution</div>
-    <canvas id="outcomeChart"></canvas>
-  </div>
-</div>
-
-<!-- ═══════════════════ MODELS TAB ═══════════════════ -->
-<div id="tab-models" class="content panel">
-  <div class="section-title mb">
-    <span>🏛️</span> Greek Pantheon Specialists — Generation <span id="model-gen">0</span>
-  </div>
-
-  <div class="agent-grid mb-lg" id="agents-grid"></div>
-
-  <div class="grid grid-2">
-    <div class="card">
-      <div class="card-title"><span class="icon">📐</span> Brier Score Calibration</div>
-      <div class="metric-label" style="margin-bottom:12px">Lower = better calibrated probability estimates</div>
-      <div id="brier-bars"></div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">📊</span> Model Monitor</div>
-      <div class="stat-row"><span class="stat-label">Rolling Accuracy</span><span class="stat-value" id="mon-accuracy">—</span></div>
-      <div class="stat-row"><span class="stat-label">Calibration Error (ECE)</span><span class="stat-value" id="mon-ece">—</span></div>
-      <div class="stat-row"><span class="stat-label">Feature Drift Score</span><span class="stat-value" id="mon-drift">—</span></div>
-      <div class="stat-row"><span class="stat-label">Total Predictions</span><span class="stat-value" id="mon-total">—</span></div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════ AGENT DETAIL MODAL ═══════════════════ -->
-<div class="modal-overlay" id="agent-modal" onclick="if(event.target===this)closeModal()">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="agent-avatar" id="modal-avatar">🦉</div>
-      <div><h2 id="modal-name">Athena</h2><span class="tag accent" id="modal-role">Trend Rider</span></div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="modal-section">
-        <h3>📖 Description</h3>
-        <p id="modal-desc"></p>
-      </div>
-      <div class="modal-stats" id="modal-stats"></div>
-      <div class="modal-section">
-        <h3>🧮 Feature Domain</h3>
-        <p id="modal-domain"></p>
-      </div>
-      <div class="modal-section">
-        <h3>📐 Core Mathematics</h3>
-        <div id="modal-math"></div>
-      </div>
-      <div class="modal-section">
-        <h3>⚙️ Hyperparameters</h3>
-        <div id="modal-hyperparams"></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════ PREDICTION THOUGHT PROCESS MODAL ═══════════════════ -->
-<div class="modal-overlay" id="thought-modal" onclick="if(event.target===this)closeThoughtModal()">
-  <div class="modal" style="width: 700px;">
-    <div class="modal-header">
-      <div>
-        <h2 id="thought-symbol" style="display:inline-block; margin-right: 12px;">BTCUSDT</h2>
-        <span class="tag green" id="thought-dir">BULLISH</span>
-      </div>
-      <button class="modal-close" onclick="closeThoughtModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="grid grid-2 mb">
-        <div class="modal-stat"><div class="label">PPO RL Action</div><div class="val" id="thought-ppo-action">—</div></div>
-        <div class="modal-stat"><div class="label">Sizing Multiplier</div><div class="val" id="thought-ppo-size">—</div></div>
-      </div>
-      
-      <div class="modal-section">
-        <h3>🧠 Greek Pantheon Votes (Raw Probability)</h3>
-        <div id="thought-specialists"></div>
-      </div>
-
-      <div class="modal-section" id="thought-shap-sec">
-        <h3>🔬 Explainability (SHAP Values)</h3>
-        <div class="math-block" id="thought-shap">No explanation available.</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════ TECHNOLOGY TAB ═══════════════════ -->
-<div id="tab-tech" class="content panel">
-  <div class="section-title mb">
-    <span>🔬</span> QUANTA v11.6 — Advanced Technology Stack
-  </div>
-  <p style="color:var(--text-secondary);margin-bottom:20px;font-size:13px;max-width:800px;line-height:1.7">
-    Every prediction in QUANTA is backed by peer-reviewed research. Below is the complete list of mathematical models, algorithms, and techniques powering the system.
-  </p>
-  <div class="tech-grid">
-
-    <div class="tech-card">
-      <div class="tech-card-icon">🎯</div>
-      <h3>Triple Barrier Method</h3>
-      <div class="tech-subtitle">Labeling Engine</div>
-      <p>Replaces naive endpoint returns with proper barrier-crossing labels. A trade is labeled WIN if price hits Take-Profit before Stop-Loss within the time window; LOSS if SL hits first; TIMEOUT otherwise.</p>
-      <div class="math-block">Label(t) = {
-  1 (WIN)   if ∃ τ ∈ [t, t+T] : P(τ) ≥ P(t) × (1 + TP)
-  0 (LOSS)  if ∃ τ ∈ [t, t+T] : P(τ) ≤ P(t) × (1 − SL)
-  skip      if neither barrier hit within T bars
-}
-TP = k₁ × ATR(t),  SL = k₂ × ATR(t)</div>
-      <div class="tech-ref">📚 López de Prado, "Advances in Financial ML" (2018), Ch. 3</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">📊</div>
-      <h3>Brier Score Calibration</h3>
-      <div class="tech-subtitle">Probability Quality Metric</div>
-      <p>Measures how well each specialist's predicted probabilities match actual outcomes. Used to dynamically reweight the ensemble — well-calibrated models get more influence.</p>
-      <div class="math-block">Brier = (1/N) Σᵢ (pᵢ − oᵢ)²
-
-where pᵢ = predicted probability
-      oᵢ = actual outcome (0 or 1)
-
-Perfect = 0.0  |  Random = 0.25  |  Worst = 1.0</div>
-      <div class="tech-ref">📚 Brier, G.W. "Verification of Forecasts" (1950), Monthly Weather Review</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">🎲</div>
-      <h3>Kelly Criterion</h3>
-      <div class="tech-subtitle">Position Sizing</div>
-      <p>Calculates the mathematically optimal fraction of capital to risk per trade, maximizing long-term geometric growth while preventing ruin. QUANTA uses Half-Kelly for safety.</p>
-      <div class="math-block">f* = p − (q / b)
-
-where p = win probability (from ensemble)
-      q = 1 − p (loss probability)
-      b = TP/SL ratio (reward-to-risk)
-
-Half-Kelly: risk% = 0.5 × f*
-Clamped to [0.3%, 2.5%] of equity</div>
-      <div class="tech-ref">📚 Kelly, J.L. "A New Interpretation of Information Rate" (1956), Bell System Technical Journal</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">🔀</div>
-      <h3>Hidden Markov Model (HMM)</h3>
-      <div class="tech-subtitle">Market Regime Detection</div>
-      <p>Unsupervised model detecting latent market states (Bull / Range / Bear) from returns, volatility, and trend strength. Optimal K found via BIC minimization. Routes predictions to regime-specialized agents.</p>
-      <div class="math-block">States: S = {s₁, ..., sₖ}  (K found via BIC)
-Observations: Xₜ = [log_return, ATR%, ADX]
-
-Transition: A[i,j] = P(sₜ₊₁=j | sₜ=i)
-Emission:   B[j](x) = N(x; μⱼ, Σⱼ)
-
-BIC(K) = −2·ln(L) + k·ln(n)
-Decode path: Viterbi algorithm</div>
-      <div class="tech-ref">📚 Baum-Welch (1970); BIC selection — Schwarz (1978)</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">🤖</div>
-      <h3>PPO Neural Network</h3>
-      <div class="tech-subtitle">Deep Reinforcement Learning Gate</div>
-      <p>Proximal Policy Optimization agent that learns to approve or veto trades based on historical outcomes. Uses clipped surrogate objective to prevent catastrophic policy updates.</p>
-      <div class="math-block">L_CLIP(θ) = E[min(
-  rₜ(θ)·Âₜ,
-  clip(rₜ(θ), 1−ε, 1+ε)·Âₜ
-)]
-
-rₜ(θ) = π_θ(aₜ|sₜ) / π_θold(aₜ|sₜ)
-ε = 0.2 (clip range)
-
-Reward: Differential Sharpe Ratio
-ΔSₜ = (Bₜ₋₁·Rₜ − Aₜ₋₁) / (Bₜ₋₁ − Aₜ₋₁²)^(3/2)</div>
-      <div class="tech-ref">📚 Schulman et al. "PPO Algorithms" (2017); Moody & Saffall (2001)</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">🌳</div>
-      <h3>CatBoost Gradient Boosting</h3>
-      <div class="tech-subtitle">Core Prediction Engine</div>
-      <p>Each Greek specialist is a CatBoost classifier with domain-specific feature masks. Uses ordered boosting to prevent target leakage and GPU acceleration for real-time inference.</p>
-      <div class="math-block">F(x) = Σₘ γₘ · hₘ(x)   (additive trees)
-
-Loss: Logloss = −[y·log(p) + (1−y)·log(1−p)]
-Regularization: L₂ leaf penalty (λ = 5.0)
-Sampling: Bernoulli subsample = 0.8
-
-7 specialists × 800–1500 iterations each
-GPU inference: ~5ms per prediction</div>
-      <div class="tech-ref">📚 Prokhorenkova et al. "CatBoost" (2018), NeurIPS</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">⚖️</div>
-      <h3>Entropy-Regularized Ensemble</h3>
-      <div class="tech-subtitle">Weight Optimization</div>
-      <p>Ensemble weights are optimized using a blend of Brier quality and validation AUC, with Shannon entropy regularization to prevent any single model from dominating.</p>
-      <div class="math-block">w* = argmax Σᵢ scoreᵢ·wᵢ + λ·H(w)
-
-H(w) = −Σᵢ wᵢ·ln(wᵢ)  (Shannon entropy)
-λ = 0.3 (regularization strength)
-
-Constraints:
-  wᵢ ∈ [0.05, 0.25]  (no single model > 25%)
-  Σ wᵢ = 1
-
-score = 0.4·AUC + 0.6·(1 − Brier)</div>
-      <div class="tech-ref">📚 Krogh & Vedelsby (1994); REPO — Markowitz + Shannon</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">📈</div>
-      <h3>VPIN Order Flow</h3>
-      <div class="tech-subtitle">Volume-Synchronized Probability of Informed Trading</div>
-      <p>Estimates the probability that current volume is driven by informed traders rather than noise. High VPIN precedes large moves and is used by flow-specialist agents.</p>
-      <div class="math-block">VPIN = Σ|V_buy − V_sell| / (n · V_bucket)
-
-Buy/Sell classification: Bulk Volume (BVC)
-V_buy = V · Φ(ΔP / σ_ΔP)
-V_sell = V − V_buy
-
-Alert threshold: VPIN > 2σ above rolling mean</div>
-      <div class="tech-ref">📚 Easley, López de Prado, O'Hara (2012), Journal of Portfolio Mgmt</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">🔢</div>
-      <h3>Fractional Differencing</h3>
-      <div class="tech-subtitle">Stationarity Preservation</div>
-      <p>Makes price series stationary while preserving long memory — unlike integer differencing which destroys predictive information. Used as features for mean-reversion detection.</p>
-      <div class="math-block">d ∈ (0, 1)  — fractional order
-
-(1−B)^d = Σₖ C(d,k)·(−B)^k
-
-C(d,k) = Γ(d+1) / [Γ(k+1)·Γ(d−k+1)]
-
-d ≈ 0.4: minimum d for ADF stationarity
-         while retaining 95%+ correlation</div>
-      <div class="tech-ref">📚 Hosking (1981); López de Prado (2018), Ch. 5</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">🧬</div>
-      <h3>Temporal Fusion Transformer (TFT)</h3>
-      <div class="tech-subtitle">Deep Learning Sequence Model</div>
-      <p>Attention-based neural network that processes multi-horizon temporal data. Uses variable selection networks to automatically identify the most relevant features per time step.</p>
-      <div class="math-block">Architecture:
-  Input → Variable Selection → LSTM Encoder
-  → Multi-Head Attention (4 heads)
-  → Gated Residual Network → Output
-
-Params: ~64 hidden, dropout=0.1
-Optimizer: Adam (lr=1e-3)
-Loss: BCE with logits</div>
-      <div class="tech-ref">📚 Lim et al. "Temporal Fusion Transformers" (2021), Int. J. Forecasting</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">🧊</div>
-      <h3>Hurst Exponent & Sample Entropy</h3>
-      <div class="tech-subtitle">Market Microstructure Analysis</div>
-      <p>Hurst exponent detects trending (H>0.5) vs mean-reverting (H&lt;0.5) behavior. Sample entropy measures market complexity — low entropy signals predictable regimes.</p>
-      <div class="math-block">Hurst (R/S method):
-  H = log(R/S) / log(n)
-  H > 0.5 → trending  |  H < 0.5 → mean-reverting
-
-Sample Entropy:
-  SampEn = −ln(A/B)
-  where A = template matches at m+1
-        B = template matches at m</div>
-      <div class="tech-ref">📚 Hurst (1951); Richman & Moorman (2000)</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">💰</div>
-      <h3>Kyle's Lambda & Amihud Illiquidity</h3>
-      <div class="tech-subtitle">Market Impact Estimation</div>
-      <p>Kyle's Lambda measures price impact per unit of volume — high λ means low liquidity. Amihud ratio captures absolute return per dollar of volume, identifying illiquid conditions where slippage is dangerous.</p>
-      <div class="math-block">Kyle's Lambda:
-  λ = Cov(ΔP, V) / Var(V)
-
-Amihud Illiquidity:
-  ILLIQ = (1/N) Σ |Rₜ| / Volumeₜ
-
-Both normalized to z-scores for feature input</div>
-      <div class="tech-ref">📚 Kyle (1985), Econometrica; Amihud (2002), J. Financial Markets</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">📉</div>
-      <h3>Black-Scholes Barrier Probability</h3>
-      <div class="tech-subtitle">Theoretical Win Rate Estimation</div>
-      <p>Adapted from options pricing theory, computes the theoretical probability that a barrier (TP/SL) will be hit given current volatility. Provides a model-free baseline for comparison with ML predictions.</p>
-      <div class="math-block">Kou Double-Exponential Barrier:
-  P(hit TP) ≈ exp(−2·μ·TP / σ²)
-
-BS Time Decay:
-  θ(t) = −S·σ·N'(d₁) / (2√T)
-
-Implied Vol Ratio:
-  IVR = σ_realized / σ_historical</div>
-      <div class="tech-ref">📚 Black & Scholes (1973); Kou (2002), Management Science</div>
-    </div>
-
-    <div class="tech-card">
-      <div class="tech-card-icon">🔄</div>
-      <h3>CPCV Walk-Forward Validation</h3>
-      <div class="tech-subtitle">Combinatorial Purged Cross-Validation</div>
-      <p>Prevents look-ahead bias in time-series by purging overlap between train/test sets and using combinatorial paths. Model registry gates deployment: only models that beat previous generation go live.</p>
-      <div class="math-block">For each fold k:
-  Train: data[0 : t_k − purge_window]
-  Test:  data[t_k : t_k+1]
-  Embargo: gap of h bars between sets
-
-Deploy gate:
-  AUC_new > AUC_prev − tolerance
-  Brier_new < 0.30 (max threshold)
-  Accuracy improvement > 1%</div>
-      <div class="tech-ref">📚 López de Prado (2018), Ch. 7 — "Cross-Validation in Finance"</div>
-    </div>
-
-  </div>
-</div>
-
-<!-- ═══════════════════ SYSTEM TAB ═══════════════════ -->
-<div id="tab-system" class="content panel">
-  <div class="grid grid-4 mb">
-    <div class="card">
-      <div class="card-title"><span class="icon">📦</span> Data Queue</div>
-      <div class="metric accent" id="queue-size">0</div>
-      <div class="metric-sub" id="queue-max">/ 0 max</div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">⏱️</span> Avg Latency</div>
-      <div class="metric cyan" id="latency">—</div>
-      <div class="metric-label">ms per prediction</div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">🔄</span> Throughput</div>
-      <div class="metric green" id="throughput">—</div>
-      <div class="metric-label">coins / minute</div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">⏳</span> Uptime</div>
-      <div class="metric" id="uptime" style="color:var(--text-primary)">—</div>
-      <div class="metric-sub" id="total-processed">0 total processed</div>
-    </div>
-  </div>
-
-  <div class="grid grid-2 mb">
-    <div class="card">
-      <div class="card-title"><span class="icon">🛡️</span> Risk Events</div>
-      <div id="risk-events" style="max-height:300px;overflow-y:auto;">
-        <div class="table-empty">No risk events</div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span class="icon">📋</span> Runtime Log</div>
-      <div class="log-box" id="log-tail">Connecting...</div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════ ZEUS.AI TAB (Replaced Settings) ═══════════════════ -->
-<div id="tab-settings" class="content panel">
-  <div class="section-title mb">⚡ ZEUS.ai LLM Supervisor Audit Trail</div>
-  <div class="tech-card mb" style="background:rgba(108, 92, 231, 0.05); border:1px solid var(--accent); padding:16px;">
-    <strong>Autonomous AI Adjustments:</strong> ZEUS uses Zhipu GLM-5-Turbo to mathematically supervise neural network training results. It parses the loss curves and adjusts PPO exploration gradients or stops specialist overfitting dynamically without any human intervention.
-  </div>
-  <div id="settings-container" class="grid grid-2">
-    <!-- UI will be dynamically generated by JS -->
-    Loading latest LLM instructions...
-  </div>
-</div>
-
-<!-- ═══════════════════ JAVASCRIPT ═══════════════════ -->
-<script>
-const AGENT_ICONS = {
-  athena: '🦉', ares: '⚔️', hermes: '🏃', artemis: '🏹',
-  chronos: '⏳', hephaestus: '🔨', nike: '🏆'
-};
-
-const AGENT_DETAILS = {
-  athena: {
-    role: 'Trend Rider',
-    domain: 'Trend-core features: RSI, MACD, ADX across 7 timeframes + cross-TF consensus + momentum confluence + drift detection + multi-TF returns + BS barrier probability.',
-    math: `CatBoost ensemble prediction (trend domain):\n\nP(bullish) = σ(F(x_trend))\nF(x) = Σₘ γₘ · hₘ(x_masked)\n\nFeature mask: 100+ trend indicators\nCross-TF consensus: Σ(bull_tf) / 7\nMomentum confirmation: MACD_bull% > 0.6`,
-    ref: 'Wilder (1978) — RSI; Appel (1979) — MACD'
-  },
-  ares: {
-    role: 'Trend Crusher',
-    domain: 'Same trend domain as Athena but trained exclusively on bearish labels — specialized in detecting weak bounces in bleeding downtrends.',
-    math: `Bearish Triple Barrier:\n\nLabel = 1 if price drops SL×ATR before recovering\nTP_short = k₁ × ATR (downside target)\nSL_short = k₂ × ATR (upside stop)\n\nClass balancing: auto_class_weights\nMinority boost: up to 77× weight`,
-    ref: 'López de Prado (2018) — Bearish barrier labeling'
-  },
-  hermes: {
-    role: 'Range Navigator',
-    domain: 'Mean-reversion features: RSI extremes, Bollinger Band width, ADX, ATR, HMM regime, Hurst exponent, sample entropy, BS barrier probability.',
-    math: `Mean Reversion Signal:\n\nBuy when RSI < 30 AND BB_position < 0.2\nSell when RSI > 70 AND BB_position > 0.8\n\nHurst exponent H < 0.5 confirms mean-reversion\nSampEn low = predictable regime\nHMM regime = 1 (ranging) → weight boost`,
-    ref: 'Bollinger (2001); Hurst (1951)'
-  },
-  hephaestus: {
-    role: 'Structural Forger',
-    domain: 'Structural features: Full indicator suite across TFs + ATR/ADX/BB analysis + strength progression + regime detection + drift + advanced research + all 3 BS barrier features.',
-    math: `Structural Bounce Detection:\n\nSupport = local_min(close, window=20)\nResistance = local_max(close, window=20)\n\nBounce signal:\n  price within 0.5×ATR of support\n  AND ADX < 25 (weak trend = structure holds)\n  AND volume_ratio > 1.5 (accumulation)`,
-    ref: 'Ho (1998) — Random Subspace; Kuncheva (2004)'
-  },
-  nike: {
-    role: 'Impulse Rider',
-    domain: 'Impulse features: ATR + RSI + MACD + BB per-TF, volume ratios, VPIN, fractional diff, taker imbalance, order book depth, Kyle\'s Lambda, delta features, impulse continuation features.',
-    math: `Impulse Continuation vs Death:\n\nImpulse = |close - open| > 2 × ATR\nContinuation probability:\n  P(cont) = f(VPIN, taker_imbalance, OB_depth)\n\nKyle's λ = Cov(ΔP, V) / Var(V)\nHigh λ → thin book → impulse continues\nOB imbalance > 0.6 → continuation signal`,
-    ref: 'Kyle (1985); Easley et al. (2012)'
-  },
-  artemis: {
-    role: 'Stealth Accumulator',
-    domain: 'Volatility-breakout features: ATR, BB, ADX, spike-dump-reversal (20 features), enhanced volatility, VPIN, order book, HMM regime, BS barrier features.',
-    math: `Hidden Volume Detection:\n\nStealth accumulation signal:\n  volume_z > 2σ but |ΔP| < 0.5 × ATR\n  (big volume, small price move = absorption)\n\nSpike detection: Δclose > 3 × ATR_14\nDump detection: Δclose < -3 × ATR_14\nReversal: spike → dump within 3 bars`,
-    ref: 'Wyckoff (1937) — Accumulation/Distribution'
-  },
-  chronos: {
-    role: 'Deep Reversal',
-    domain: 'Macro-sentiment features: cross-TF consensus, market regime, time/session features, drift detection, HMM regime, sentiment (Fear & Greed), futures X-Ray, stat arb.',
-    math: `V-Shape Reversal Detection:\n\nRSI extreme: RSI_1h < 20 (deeply oversold)\nFear & Greed < 25 (extreme fear)\nFunding rate < -0.01% (shorts overcrowded)\n\nRecency boost: 5.0× (latest data weighted)\nSentiment features: FG index, social_score,\n  news_sentiment, funding_velocity`,
-    ref: 'Moody & Saffell (2001) — DSR reward shaping'
-  }
-};
-
-let _cachedSpecialists = [];
-let _cachedBrier = {};
-
-let equityChart, outcomeChart;
-
-function showTab(name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  const tabs = ['overview','norse','predictions','models','system','settings','tech'];
-  const idx = tabs.indexOf(name);
-  if (idx !== -1) {
-      document.querySelectorAll('.tab')[idx].classList.add('active');
-  }
-  document.getElementById('tab-' + name).classList.add('active');
-  
-  if (name === 'settings') {
-      loadSettings();
-  }
-}
-
-let currentSettings = {};
-
-async function loadSettings() {
-  try {
-    const r = await fetch('/api/settings');
-    if (!r.ok) throw new Error("Failed to fetch settings");
-    currentSettings = await r.json();
-    renderSettingsState();
-  } catch (err) {
-    console.error(err);
-    document.getElementById('settings-container').innerHTML = '<div style="color:var(--red);">Failed to load settings. Check bot connection.</div>';
-  }
-}
-
-function renderSettingsState() {
-  // Now rendering ZEUS logs instead of settings
-  const container = document.getElementById('settings-container');
-  if (!currentSettings || currentSettings.length === 0) {
-    container.innerHTML = '<div style="color:var(--text-muted);font-style:italic">No AI adjustments recorded yet. ZEUS will scan after the next training cycle completes.</div>';
-    return;
-  }
-  
-  let html = '';
-  // currentSettings contains the array of zeus logs initialized from system api
-  currentSettings.forEach((log, index) => {
-      const stamp = new Date(log.timestamp).toLocaleString();
-      let overridesHtml = '';
-      if (log.overrides) {
-         if (log.overrides.PPO) {
-             overridesHtml += `<div class="math-block" style="color:var(--green)">[PPO] Lr: ${log.overrides.PPO.lr}, Entropy: ${log.overrides.PPO.entropy}, Clip: ${log.overrides.PPO.clip}</div>`;
-         }
-         if (log.overrides.specialists) {
-             for (const [sName, sArgs] of Object.entries(log.overrides.specialists)) {
-                 overridesHtml += `<div class="math-block" style="color:var(--cyan)">[${sName}] Lr: ${sArgs.learning_rate}, Depth: ${sArgs.depth}, Iters: ${sArgs.iterations}</div>`;
-             }
-         }
-      }
-      
-      html += `
-        <div class="card">
-          <div class="card-title" style="display:flex; justify-content:space-between; border-bottom:1px solid var(--border); padding-bottom:8px;">
-             <span><span class="icon">🤖</span> AI Engine: ${log.model}</span>
-             <span style="font-size:11px; color:var(--text-muted); font-family:var(--mono);">${stamp}</span>
-          </div>
-          <div style="margin-top:12px;">
-             <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px;">Event Trigger: <strong>${log.input_summary}</strong></div>
-             ${overridesHtml}
+  <div class="shell">
+    <header class="topbar">
+      <div class="topbar-card brand-card">
+        <div class="brand-mark">
+          <div class="brand-bolt">Q</div>
+          <div>
+            <div class="brand-name">QUANTA</div>
+            <div class="brand-sub">Thor-only command deck</div>
           </div>
         </div>
-      `;
-  });
-  
-  container.innerHTML = html;
-}
+        <div class="brand-meta">
+          <div class="pill"><strong>v12.4</strong></div>
+          <div class="pill"><span class="status-led" id="status-dot"></span><strong id="status-text">Connecting</strong></div>
+          <div class="pill"><strong id="live-clock">--:--:--</strong></div>
+          <div class="pill">Refresh <strong>5s</strong></div>
+        </div>
+      </div>
 
-async function saveSettings() {
-  const inputs = document.querySelectorAll('#settings-container input');
-  const payload = {};
-  
-  inputs.forEach(inp => {
-    const cat = inp.getAttribute('data-category');
-    const key = inp.getAttribute('data-key');
-    let val = inp.value;
-    
-    // basic type coercion back to float/int/bool
-    if (!isNaN(val) && val.trim() !== '') {
-        val = val.includes('.') ? parseFloat(val) : parseInt(val);
-    } else if (val.toLowerCase() === 'true') {
-        val = true;
-    } else if (val.toLowerCase() === 'false') {
-        val = false;
-    }
-    
-    if (!payload[cat]) payload[cat] = {};
-    payload[cat][key] = val;
-  });
-  
-  try {
-    const r = await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    
-    if (r.ok) {
-      alert("Settings successfully saved to hardware override file! Changes that modify infrastructure may require a main.py restart.");
-    } else {
-      alert("Server rejected the new settings format.");
-    }
-  } catch(err) {
-    alert("Connection error sending settings.");
-  }
-}
-
-function fmt(n, prefix='') {
-  if (n === null || n === undefined) return '—';
-  const sign = n >= 0 ? '+' : '';
-  return prefix + sign + n.toFixed(2);
-}
-
-function fmtPrice(n) {
-  if (!n) return '—';
-  if (n >= 1) return '$' + n.toFixed(2);
-  if (n >= 0.01) return '$' + n.toFixed(4);
-  return '$' + n.toFixed(6);
-}
-
-function initCharts() {
-  const commonOpts = {
-    responsive: true,
-    maintainAspectRatio: true,
-    plugins: { legend: { display: false } },
-    scales: {
-      x: {
-        ticks: { color: '#5a6380', maxTicksLimit: 8, font: { family: 'Inter', size: 10 } },
-        grid: { color: 'rgba(255,255,255,0.03)', drawBorder: false }
-      },
-      y: {
-        ticks: { color: '#5a6380', font: { family: 'Inter', size: 10 } },
-        grid: { color: 'rgba(255,255,255,0.03)', drawBorder: false }
-      }
-    }
-  };
-
-  equityChart = new Chart(document.getElementById('equityChart'), {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [{
-        data: [],
-        borderColor: '#6c5ce7',
-        backgroundColor: 'rgba(108, 92, 231, 0.08)',
-        fill: true,
-        tension: 0.4,
-        pointRadius: 0,
-        borderWidth: 2,
-      }]
-    },
-    options: commonOpts
-  });
-
-  outcomeChart = new Chart(document.getElementById('outcomeChart'), {
-    type: 'bar',
-    data: { labels: [], datasets: [{ data: [], backgroundColor: [] }] },
-    options: commonOpts
-  });
-}
-
-let _posView = 'active';
-let _activePositions = [];
-let _historyPositions = [];
-
-function togglePosView(view) {
-  _posView = view;
-  document.getElementById('toggle-active').classList.toggle('active', view === 'active');
-  document.getElementById('toggle-history').classList.toggle('active', view === 'history');
-  
-  // Update header text
-  document.getElementById('pos-card-header').textContent = view === 'active' ? 'Active Positions' : 'Trade History';
-  
-  renderPositionsTable();
-}
-
-function renderPositionsTable() {
-  const body = document.getElementById('positions-body');
-  const head = document.querySelector('#positions-body').parentElement.querySelector('thead tr');
-  const data = _posView === 'active' ? _activePositions : _historyPositions;
-  
-  // Update Header based on view
-  if (_posView === 'active') {
-    head.innerHTML = '<th>Symbol</th><th>Direction</th><th>Entry</th><th>Size</th><th>Conf</th>';
-  } else {
-    head.innerHTML = '<th>Symbol</th><th>Direction</th><th>Entry</th><th>Exit</th><th>Result</th>';
-  }
-
-  if (data.length === 0) {
-    const cols = _posView === 'active' ? 5 : 5;
-    body.innerHTML = `<tr><td colspan="${cols}" class="table-empty">No ${_posView} trades found</td></tr>`;
-    return;
-  }
-
-  body.innerHTML = data.map(p => {
-    const dirTag = p.direction === 'BULLISH' ? 'bull' : 'bear';
-    const dirLabel = p.direction === 'BULLISH' ? '▲ LONG' : '▼ SHORT';
-    
-    if (_posView === 'active') {
-      const safeP = encodeURIComponent(JSON.stringify(p));
-      return `<tr class="clickable" onclick="openPositionModal(decodeURIComponent('${safeP}'))">
-        <td><b>${p.symbol}</b></td>
-        <td><span class="tag ${dirTag}">${dirLabel}</span></td>
-        <td>${fmtPrice(p.entry)}</td>
-        <td style="font-family:var(--mono);font-size:12px">${fmtPrice(p.size_usd || 0)}</td>
-        <td>${(p.confidence||0).toFixed(1)}%</td>
-      </tr>`;
-    } else {
-      // History view
-      const pnl = p.pnl_pct || 0;
-      const hit = p.barrier_hit || 'TIMEOUT';
-      const hitClass = hit.includes('TP') ? 'tp' : (hit.includes('SL') ? 'sl' : '');
-      const hitLabel = hit.includes('TP') ? hit + ' ✓' : (hit.includes('SL') ? hit + ' ✕' : hit);
-      
-      return `<tr>
-        <td><b>${p.symbol}</b></td>
-        <td><span class="tag ${dirTag}">${dirLabel}</span></td>
-        <td>${fmtPrice(p.entry_price || p.entry)}</td>
-        <td>${fmtPrice(p.exit_price)}</td>
-        <td>
-          <div style="display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
-            <span class="res-badge ${hitClass}">${hitLabel}</span>
-            <span style="font-size:10px; font-weight:700; color:${pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%</span>
+      <div class="topbar-card meta-card">
+        <div class="meta-top">
+          <div>
+            <div class="eyebrow">Session Frame</div>
+            <div class="meta-title">Paper system live against Thor parity</div>
           </div>
-        </td>
-      </tr>`;
+          <div class="status-chip idle" id="runtime-chip">Syncing</div>
+        </div>
+        <div class="meta-grid">
+          <div class="meta-tile">
+            <div class="meta-label">Uptime</div>
+            <div class="meta-value" id="uptime">--</div>
+          </div>
+          <div class="meta-tile">
+            <div class="meta-label">Generation</div>
+            <div class="meta-value" id="hero-generation">--</div>
+          </div>
+          <div class="meta-tile">
+            <div class="meta-label">Predictions</div>
+            <div class="meta-value" id="hero-predictions">0</div>
+          </div>
+          <div class="meta-tile">
+            <div class="meta-label">Queue Depth</div>
+            <div class="meta-value" id="hero-queue">0</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="thor">Thor</button>
+      <button class="tab" data-tab="predictions">Predictions</button>
+      <button class="tab" data-tab="models">Models</button>
+      <button class="tab" data-tab="system">System</button>
+      <button class="tab" data-tab="oracle">Oracle</button>
+      <button class="tab" data-tab="technology">Technology</button>
+    </nav>
+
+    <main class="section-stack">
+      <section id="panel-overview" class="panel active">
+        <div class="section-stack">
+          <article class="hero-card">
+            <div class="hero-grid">
+              <div>
+                <div class="hero-label">Execution posture</div>
+                <div class="hero-headline">Thor live paper now mirrors the walk-forward sim.</div>
+                <div class="hero-copy">
+                  This dashboard is tuned around one question: is the paper engine behaving like the model you backtested?
+                  The overview keeps capital, runner state, pressure, and drift in one place.
+                </div>
+              </div>
+              <div class="hero-side">
+                <div class="hero-kicker tone-teal">
+                  <div class="eyebrow">Capital state</div>
+                  <strong id="hero-balance">$0.00</strong>
+                  <span id="hero-balance-note">paper balance</span>
+                </div>
+                <div class="hero-kicker tone-amber">
+                  <div class="eyebrow">Execution mode</div>
+                  <strong id="pipeline-mode">Thor-only</strong>
+                  <span id="pipeline-copy">live paper route aligned to sim</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div class="metric-row">
+            <article class="metric-card tone-teal">
+              <div class="metric-top">
+                <div class="metric-title">Balance</div>
+                <div class="status-chip live">Paper</div>
+              </div>
+              <div class="metric-value" id="balance">$0.00</div>
+              <div class="metric-foot">capital on the paper ledger</div>
+            </article>
+            <article class="metric-card tone-blue">
+              <div class="metric-top">
+                <div class="metric-title">Total PnL</div>
+                <div class="status-chip idle">Session</div>
+              </div>
+              <div class="metric-value" id="pnl">$0.00</div>
+              <div class="metric-foot" id="pnl-pct">0.00%</div>
+            </article>
+            <article class="metric-card tone-amber">
+              <div class="metric-top">
+                <div class="metric-title">Win Rate</div>
+                <div class="status-chip training">Trade set</div>
+              </div>
+              <div class="metric-value" id="win-rate">0.0%</div>
+              <div class="metric-foot" id="win-sub">0W / 0L</div>
+            </article>
+            <article class="metric-card tone-red">
+              <div class="metric-top">
+                <div class="metric-title">Drawdown</div>
+                <div class="status-chip paused">Risk</div>
+              </div>
+              <div class="metric-value" id="max-dd">0.00%</div>
+              <div class="metric-foot" id="current-dd">current 0.00%</div>
+            </article>
+          </div>
+
+          <div id="legacy-warning" class="callout" style="display:none;"></div>
+
+          <div class="two-grid">
+            <article class="panel-card">
+              <div class="panel-header">
+                <div>
+                  <div class="eyebrow">Capital trace</div>
+                  <div class="card-title">Equity curve</div>
+                </div>
+                <div class="pill mono">last 200 points</div>
+              </div>
+              <canvas id="equityChart"></canvas>
+            </article>
+
+            <article class="panel-card">
+              <div class="panel-header">
+                <div>
+                  <div class="eyebrow">Thor ledger</div>
+                  <div class="card-title" id="position-card-title">Executed positions</div>
+                </div>
+                <div class="toggle-group">
+                  <button id="toggle-active" class="active" type="button">Active</button>
+                  <button id="toggle-history" type="button">History</button>
+                </div>
+              </div>
+
+              <div id="history-controls" class="sub-filters" style="display:none;">
+                <div class="toggle-group">
+                  <button id="filter-all" class="active" type="button">All</button>
+                  <button id="filter-wins" type="button">Wins</button>
+                  <button id="filter-losses" type="button">Losses</button>
+                </div>
+                <div class="note" id="history-summary">recent executions</div>
+              </div>
+
+              <div class="table-wrap">
+                <table>
+                  <thead id="positions-head"></thead>
+                  <tbody id="positions-body">
+                    <tr><td class="table-empty">No executed positions</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+
+          <div class="three-grid">
+            <article class="panel-card">
+              <div class="eyebrow">Sentiment</div>
+              <div class="card-title">Fear and greed</div>
+              <div class="metric-value tone-amber" id="fg-value" style="margin-top: 14px;">--</div>
+              <div class="card-copy" id="fg-label" style="margin-top: 8px; margin-bottom: 0;">loading</div>
+            </article>
+
+            <article class="panel-card">
+              <div class="eyebrow">Pipeline state</div>
+              <div class="card-title">Prediction flow</div>
+              <div class="card-list">
+                <div class="stat-line"><span class="stat-key">Thor executed trades</span><span class="stat-val" id="open-pos">0</span></div>
+                <div class="stat-line"><span class="stat-key">Total predictions</span><span class="stat-val" id="rl-total">0</span></div>
+                <div class="stat-line"><span class="stat-key">Pending outcomes</span><span class="stat-val" id="rl-pending">0</span></div>
+                <div class="stat-line"><span class="stat-key">Execution copy</span><span class="stat-val" id="pos-sub">thor executions</span></div>
+              </div>
+            </article>
+
+            <article class="panel-card">
+              <div class="eyebrow">Risk shell</div>
+              <div class="card-title">Protection state</div>
+              <div class="card-list">
+                <div class="stat-line"><span class="stat-key">Trading</span><span class="stat-val" id="risk-paused">Active</span></div>
+                <div class="stat-line"><span class="stat-key">Daily PnL</span><span class="stat-val" id="risk-daily-pnl">$0.00</span></div>
+                <div class="stat-line"><span class="stat-key">Loss streak</span><span class="stat-val" id="risk-streak">0</span></div>
+                <div class="stat-line"><span class="stat-key">Size multiplier</span><span class="stat-val" id="risk-size-mult">1.00x</span></div>
+              </div>
+            </article>
+          </div>
+
+          <div id="drift-alerts-container" class="alerts"></div>
+        </div>
+      </section>
+
+      <section id="panel-thor" class="panel">
+        <div class="section-stack">
+          <article class="hero-card">
+            <div class="hero-grid">
+              <div>
+                <div class="hero-label">Thor control plane</div>
+                <div class="hero-headline">One specialist. One score ladder. One exit geometry.</div>
+                <div class="hero-copy">
+                  This panel shows the live Thor profile, the active calibrated exit geometry, and the latest walk-forward benchmark that the paper path is supposed to mirror.
+                </div>
+              </div>
+              <div class="hero-side">
+                <div class="hero-kicker tone-blue">
+                  <div class="eyebrow">Generation</div>
+                  <strong id="thor-gen">--</strong>
+                  <span id="thor-trained">not trained</span>
+                </div>
+                <div class="hero-kicker tone-teal">
+                  <div class="eyebrow">Rolling Brier</div>
+                  <strong id="thor-brier">--</strong>
+                  <span>probability quality on closed trades</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div class="four-grid">
+            <article class="panel-card">
+              <div class="eyebrow">Live gate</div>
+              <div class="card-title">Entry threshold</div>
+              <div class="metric-value" id="thor-score" style="margin-top: 14px;">--</div>
+              <div class="card-copy" style="margin-top: 8px; margin-bottom: 0;">minimum Thor score to trade</div>
+            </article>
+            <article class="panel-card">
+              <div class="eyebrow">Walk-forward</div>
+              <div class="card-title">Latest run</div>
+              <div class="metric-value" id="wf-growth" style="margin-top: 14px;">--</div>
+              <div class="card-copy" id="wf-run-id" style="margin-top: 8px; margin-bottom: 0;">no run loaded</div>
+            </article>
+            <article class="panel-card">
+              <div class="eyebrow">Current PF</div>
+              <div class="card-title">Benchmark fit</div>
+              <div class="metric-value" id="wf-pf" style="margin-top: 14px;">--</div>
+              <div class="card-copy" id="wf-trades" style="margin-top: 8px; margin-bottom: 0;">no trades loaded</div>
+            </article>
+            <article class="panel-card">
+              <div class="eyebrow">Current DD</div>
+              <div class="card-title">Stress ceiling</div>
+              <div class="metric-value" id="wf-dd" style="margin-top: 14px;">--</div>
+              <div class="card-copy" style="margin-top: 8px; margin-bottom: 0;">latest walk-forward max drawdown</div>
+            </article>
+          </div>
+
+          <div class="two-grid">
+            <article class="panel-card">
+              <div class="panel-header">
+                <div>
+                  <div class="eyebrow">Exit geometry</div>
+                  <div class="card-title">Active Thor v2 parameters</div>
+                </div>
+                <div class="pill mono" id="thor-compound">asymmetric_target</div>
+              </div>
+              <div class="card-list">
+                <div class="stat-line"><span class="stat-key">SL ATR</span><span class="stat-val" id="thor-sl-atr">--</span></div>
+                <div class="stat-line"><span class="stat-key">Bank ATR</span><span class="stat-val" id="thor-bank-atr">--</span></div>
+                <div class="stat-line"><span class="stat-key">Bank fraction</span><span class="stat-val" id="thor-bank-frac">--</span></div>
+                <div class="stat-line"><span class="stat-key">Runner trail ATR</span><span class="stat-val" id="thor-trail-atr">--</span></div>
+                <div class="stat-line"><span class="stat-key">Trail activation ATR</span><span class="stat-val" id="thor-trail-act">--</span></div>
+                <div class="stat-line"><span class="stat-key">MAE veto</span><span class="stat-val"><span id="thor-mae-bars">--</span> bars / <span id="thor-mae-atr">--</span> ATR</span></div>
+                <div class="stat-line"><span class="stat-key">Max bars pre-bank</span><span class="stat-val" id="thor-max-pre">--</span></div>
+              </div>
+            </article>
+
+            <article class="panel-card">
+              <div class="panel-header">
+                <div>
+                  <div class="eyebrow">Support systems</div>
+                  <div class="card-title">Live monitors around Thor</div>
+                </div>
+              </div>
+              <div class="card-list">
+                <div class="stat-line"><span class="stat-key">Context min score</span><span class="stat-val" id="thor-ctx-score">--</span></div>
+                <div class="stat-line"><span class="stat-key">Nike screener</span><span class="stat-val" id="nike-status">offline</span></div>
+                <div class="stat-line"><span class="stat-key">Symbols watched</span><span class="stat-val" id="nike-watch">--</span></div>
+                <div class="stat-line"><span class="stat-key">Signals today</span><span class="stat-val" id="nike-today">--</span></div>
+                <div class="stat-line"><span class="stat-key">Total signals</span><span class="stat-val" id="nike-total">--</span></div>
+                <div class="stat-line"><span class="stat-key">Paper balance</span><span class="stat-val" id="thor-paper-balance">$0.00</span></div>
+                <div class="stat-line"><span class="stat-key">Paper PnL</span><span class="stat-val" id="thor-paper-pnl">$0.00</span></div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="panel-predictions" class="panel">
+        <div class="section-stack">
+          <article class="hero-card">
+            <div class="hero-grid">
+              <div>
+                <div class="hero-label">Signal stream</div>
+                <div class="hero-headline">Alert picks are visible here before they become executions.</div>
+                <div class="hero-copy">
+                  This stream is for model intent, not just fills. Use it to inspect what Thor wanted, what happened later, and whether paper execution is selecting the same high-conviction subset.
+                </div>
+              </div>
+              <div class="hero-side">
+                <div class="hero-kicker tone-amber">
+                  <div class="eyebrow">Pending picks</div>
+                  <strong id="pred-count">0</strong>
+                  <span>latest alert-facing ideas</span>
+                </div>
+                <div class="hero-kicker tone-teal">
+                  <div class="eyebrow">Closed outcomes</div>
+                  <strong id="outcome-count">0</strong>
+                  <span>recent RL result records</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div class="two-grid">
+            <article class="panel-card">
+              <div class="panel-header">
+                <div>
+                  <div class="eyebrow">Pending stream</div>
+                  <div class="card-title">Prediction board</div>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Symbol</th>
+                      <th>Direction</th>
+                      <th>Conf</th>
+                      <th>Status</th>
+                      <th>Entry</th>
+                    </tr>
+                  </thead>
+                  <tbody id="preds-body">
+                    <tr><td colspan="6" class="table-empty">Waiting for predictions...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="panel-card">
+              <div class="panel-header">
+                <div>
+                  <div class="eyebrow">Closed feedback</div>
+                  <div class="card-title">Outcome board</div>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Symbol</th>
+                      <th>Direction</th>
+                      <th>Conf</th>
+                      <th>Outcome</th>
+                      <th>Move</th>
+                    </tr>
+                  </thead>
+                  <tbody id="outcomes-body">
+                    <tr><td colspan="5" class="table-empty">Waiting for outcomes...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+
+          <article class="panel-card">
+            <div class="panel-header">
+              <div>
+                <div class="eyebrow">Distribution</div>
+                <div class="card-title">Outcome split</div>
+              </div>
+            </div>
+            <canvas id="outcomeChart"></canvas>
+          </article>
+        </div>
+      </section>
+
+      <section id="panel-models" class="panel">
+        <div class="section-stack">
+          <article class="hero-card">
+            <div class="hero-grid">
+              <div>
+                <div class="hero-label">Model supervision</div>
+                <div class="hero-headline">Calibration quality matters more than raw confidence cosmetics.</div>
+                <div class="hero-copy">
+                  The models panel is meant for reality checks: rolling accuracy, calibration drift, and what the model registry thinks is actually alive.
+                </div>
+              </div>
+              <div class="hero-side">
+                <div class="hero-kicker tone-blue">
+                  <div class="eyebrow">Rolling accuracy</div>
+                  <strong id="mon-accuracy">--</strong>
+                  <span>prediction monitor</span>
+                </div>
+                <div class="hero-kicker tone-red">
+                  <div class="eyebrow">Drift z-score</div>
+                  <strong id="mon-drift">--</strong>
+                  <span>feature drift monitor</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div class="three-grid">
+            <article class="panel-card">
+              <div class="eyebrow">Monitor</div>
+              <div class="card-title">Calibration error</div>
+              <div class="metric-value" id="mon-ece" style="margin-top: 14px;">--</div>
+              <div class="card-copy" style="margin-top: 8px; margin-bottom: 0;">expected calibration error</div>
+            </article>
+            <article class="panel-card">
+              <div class="eyebrow">Monitor</div>
+              <div class="card-title">Total predictions</div>
+              <div class="metric-value" id="mon-total" style="margin-top: 14px;">0</div>
+              <div class="card-copy" style="margin-top: 8px; margin-bottom: 0;">tracked by the model monitor</div>
+            </article>
+            <article class="panel-card">
+              <div class="eyebrow">Registry</div>
+              <div class="card-title">Model generation</div>
+              <div class="metric-value" id="model-gen" style="margin-top: 14px;">0</div>
+              <div class="card-copy" style="margin-top: 8px; margin-bottom: 0;">current loaded generation</div>
+            </article>
+          </div>
+
+          <article class="panel-card">
+            <div class="panel-header">
+              <div>
+                <div class="eyebrow">Registry detail</div>
+                <div class="card-title">Specialist inventory</div>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Weight</th>
+                    <th>Generation</th>
+                    <th>Brier</th>
+                    <th>Status</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody id="models-body">
+                  <tr><td colspan="6" class="table-empty">Waiting for model data...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="panel-system" class="panel">
+        <div class="section-stack">
+          <article class="hero-card">
+            <div class="hero-grid">
+              <div>
+                <div class="hero-label">Runtime mechanics</div>
+                <div class="hero-headline">If the queue, feeds, or protection shell are sick, the model quality no longer matters.</div>
+                <div class="hero-copy">
+                  The system panel keeps the runtime honest: queue pressure, throughput, risk events, and the live log tail that tells you whether the engine is actually healthy.
+                </div>
+              </div>
+              <div class="hero-side">
+                <div class="hero-kicker tone-amber">
+                  <div class="eyebrow">Queue depth</div>
+                  <strong id="queue-size">0</strong>
+                  <span id="queue-max">/ 0 max</span>
+                </div>
+                <div class="hero-kicker tone-blue">
+                  <div class="eyebrow">Latency</div>
+                  <strong id="latency">--</strong>
+                  <span id="throughput">0.0 coins/min</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div class="three-grid">
+            <article class="panel-card">
+              <div class="eyebrow">Compute</div>
+              <div class="card-title">Throughput</div>
+              <div class="metric-value" id="system-throughput" style="margin-top: 14px;">0.0</div>
+              <div class="card-copy" id="total-processed" style="margin-top: 8px; margin-bottom: 0;">0 processed</div>
+            </article>
+            <article class="panel-card">
+              <div class="eyebrow">Queues</div>
+              <div class="card-title">Result queue</div>
+              <div class="metric-value" id="result-queue" style="margin-top: 14px;">0</div>
+              <div class="card-copy" style="margin-top: 8px; margin-bottom: 0;">backpressure on output side</div>
+            </article>
+            <article class="panel-card">
+              <div class="eyebrow">Fetch path</div>
+              <div class="card-title">Average fetch</div>
+              <div class="metric-value" id="fetch-ms" style="margin-top: 14px;">--</div>
+              <div class="card-copy" style="margin-top: 8px; margin-bottom: 0;">remote data path latency</div>
+            </article>
+          </div>
+
+          <div class="two-grid">
+            <article class="panel-card">
+              <div class="panel-header">
+                <div>
+                  <div class="eyebrow">Protection events</div>
+                  <div class="card-title">Recent risk events</div>
+                </div>
+              </div>
+              <div id="risk-events" class="event-list">
+                <div class="empty-state">No recent risk events</div>
+              </div>
+            </article>
+
+            <article class="log-card">
+              <div class="panel-header">
+                <div>
+                  <div class="eyebrow">Runtime log</div>
+                  <div class="card-title">Live tail</div>
+                </div>
+              </div>
+              <div id="log-tail" class="log-box">Waiting for log data...</div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="panel-oracle" class="panel">
+        <div class="section-stack">
+          <article class="hero-card">
+            <div class="hero-grid">
+              <div>
+                <div class="hero-label">Supervisor feed</div>
+                <div class="hero-headline">Oracle is treated here as an audit layer, not a vibe layer.</div>
+                <div class="hero-copy">
+                  These records are the latest Zeus audit entries the runtime exposed. If there are no entries yet, that means the supervisor has not pushed a new intervention record into the audit log.
+                </div>
+              </div>
+              <div class="hero-side">
+                <div class="hero-kicker tone-amber">
+                  <div class="eyebrow">Oracle feed</div>
+                  <strong id="oracle-count">0</strong>
+                  <span>latest audit entries loaded</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel-card">
+            <div class="panel-header">
+              <div>
+                <div class="eyebrow">Audit trail</div>
+                <div class="card-title">Zeus logs</div>
+              </div>
+            </div>
+            <div id="oracle-feed" class="feed-list">
+              <div class="empty-state">No audit entries recorded yet.</div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="panel-technology" class="panel">
+        <div class="section-stack">
+          <article class="hero-card">
+            <div class="hero-grid">
+              <div>
+                <div class="hero-label">System ideas</div>
+                <div class="hero-headline">The stack should explain itself in trading terms, not just model terms.</div>
+                <div class="hero-copy">
+                  Technology is only useful here if it changes expected trade behavior. These notes describe the current QUANTA architecture in that spirit.
+                </div>
+              </div>
+              <div class="hero-side">
+                <div class="hero-kicker tone-teal">
+                  <div class="eyebrow">Architecture</div>
+                  <strong>Thor-only</strong>
+                  <span>single specialist operating path</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div class="tech-grid">
+            <article class="tech-card">
+              <div class="eyebrow">Entry</div>
+              <h3>Impulse gating, then score ranking</h3>
+              <p>Thor is designed to ignore most bars and care about the small subset that already looks like an impulse breakout. The relevant question is not “is price up?” but “is this the class of event Thor was trained to exploit?”</p>
+              <div class="math-block">Gate stack:
+pre_impulse_r2 <= 0.70
+UTC hour not in {0, 7, 10, 11, 12}
+Thor score >= 68
+wave_strength >= 40</div>
+            </article>
+
+            <article class="tech-card">
+              <div class="eyebrow">Exit</div>
+              <h3>Bank once, then let the runner prove it deserves to live</h3>
+              <p>The current exit stack is built around one partial bank and one runner. The runner is supposed to die on state, not on a cosmetic calendar clock.</p>
+              <div class="math-block">Thor v2:
+SL = 3.0 ATR
+bank = dynamic Gompertz target
+bank fraction = 35%
+trail activate = 1.5 ATR above bank
+runner trail = 2.0 ATR</div>
+            </article>
+
+            <article class="tech-card">
+              <div class="eyebrow">Parity</div>
+              <h3>Paper execution now follows the walk-forward model</h3>
+              <p>The paper path was forced to behave like the WF sim instead of mixing in extra live execution logic. That means bar-based progression, sim-style fills, and no live-only risk blockers on Thor paper entries.</p>
+              <div class="math-block">Parity points:
+single synthetic fill
+bar-count timing
+closed 5m bar progression
+sim-style pyramid logic
+sim-style cooldown timestamps</div>
+            </article>
+
+            <article class="tech-card">
+              <div class="eyebrow">Supervision</div>
+              <h3>Runtime quality is part of the strategy</h3>
+              <p>A high-quality model on a degraded runtime is still a low-quality system. Queue depth, feed health, drawdown guards, and calibration monitoring are all part of whether Thor is actually trustworthy live.</p>
+              <div class="math-block">Monitors surfaced here:
+rolling accuracy
+calibration error
+feature drift
+risk events
+runtime log tail</div>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="position-modal-overlay" class="modal-overlay" onclick="if (event.target === this) closePositionModal()">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title" id="pos-modal-sym">SYMBOL</div>
+          <div class="modal-sub"><span id="pos-modal-engine">Thor</span> / <span id="pos-modal-state">THOR EXECUTED</span></div>
+        </div>
+        <button class="modal-close" type="button" onclick="closePositionModal()">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-grid">
+          <div class="modal-card">
+            <div class="eyebrow">Entry</div>
+            <strong id="pos-modal-entry">$0.00</strong>
+            <span>fill price</span>
+          </div>
+          <div class="modal-card">
+            <div class="eyebrow">Market</div>
+            <strong id="pos-modal-market">$0.00</strong>
+            <span>latest visible price</span>
+          </div>
+          <div class="modal-card">
+            <div class="eyebrow">Notional</div>
+            <strong id="pos-modal-size">$0.00</strong>
+            <span>paper units and exposure</span>
+          </div>
+          <div class="modal-card">
+            <div class="eyebrow">Confidence</div>
+            <strong id="pos-modal-conf">0.0%</strong>
+            <span>entry confidence</span>
+          </div>
+        </div>
+
+        <div class="two-grid">
+          <article class="panel-card">
+            <div class="panel-header">
+              <div>
+                <div class="eyebrow">Runner state</div>
+                <div class="card-title">Phase and barrier geometry</div>
+              </div>
+              <div id="pos-modal-phase" class="phase-chip pre">Pre-bank</div>
+            </div>
+            <div class="card-list">
+              <div class="stat-line"><span class="stat-key">Bank target</span><span class="stat-val" id="pos-modal-bank">$0.00</span></div>
+              <div class="stat-line"><span class="stat-key">Active stop</span><span class="stat-val" id="pos-modal-stop">$0.00</span></div>
+              <div class="stat-line"><span class="stat-key">Runner peak</span><span class="stat-val" id="pos-modal-peak">$0.00</span></div>
+              <div class="stat-line"><span class="stat-key">Direction</span><span class="stat-val" id="pos-modal-dir">BULLISH</span></div>
+            </div>
+          </article>
+
+          <article class="panel-card">
+            <div class="panel-header">
+              <div>
+                <div class="eyebrow">Distance map</div>
+                <div class="card-title">Live position progress</div>
+              </div>
+            </div>
+            <div class="bar-row">
+              <div class="bar-label"><span>Entry to bank</span><span id="pos-bank-progress-label">0%</span></div>
+              <div class="bar-track"><div id="pos-bank-progress-fill" class="bar-fill" style="width:0%"></div></div>
+            </div>
+            <div class="bar-row">
+              <div class="bar-label"><span>Stop distance</span><span id="pos-stop-progress-label">0%</span></div>
+              <div class="bar-track"><div id="pos-stop-progress-fill" class="bar-fill" style="width:0%; background: linear-gradient(90deg, var(--red), #ff9b90);"></div></div>
+            </div>
+            <div class="card-copy" id="pos-modal-note" style="margin-top: 14px; margin-bottom: 0;">No live note.</div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="signal-modal-overlay" class="modal-overlay" onclick="if (event.target === this) closeSignalModal()">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title" id="signal-modal-sym">SYMBOL</div>
+          <div class="modal-sub" id="signal-modal-dir">BULLISH</div>
+        </div>
+        <button class="modal-close" type="button" onclick="closeSignalModal()">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-grid">
+          <div class="modal-card">
+            <div class="eyebrow">Confidence</div>
+            <strong id="signal-modal-conf">0.0%</strong>
+            <span>model confidence</span>
+          </div>
+          <div class="modal-card">
+            <div class="eyebrow">PPO action</div>
+            <strong id="signal-modal-ppo">N/A</strong>
+            <span>size policy state</span>
+          </div>
+          <div class="modal-card">
+            <div class="eyebrow">Size mult</div>
+            <strong id="signal-modal-size-mult">N/A</strong>
+            <span>policy multiplier</span>
+          </div>
+          <div class="modal-card">
+            <div class="eyebrow">Status</div>
+            <strong id="signal-modal-status">PENDING</strong>
+            <span>alert life-cycle state</span>
+          </div>
+        </div>
+
+        <article class="panel-card">
+          <div class="panel-header">
+            <div>
+              <div class="eyebrow">Interpretation</div>
+              <div class="card-title">SHAP summary</div>
+            </div>
+          </div>
+          <div id="signal-modal-shap" class="math-block">No explanation available for this record.</div>
+        </article>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      tab: 'overview',
+      positionView: 'active',
+      historyFilter: 'all',
+      overview: null,
+      predictions: null,
+      models: null,
+      system: null,
+      thor: null
+    };
+
+    let equityChart = null;
+    let outcomeChart = null;
+
+    const $ = (id) => document.getElementById(id);
+
+    function setText(id, value) {
+      const el = $(id);
+      if (el) el.textContent = value;
     }
-  }).join('');
-}
 
-async function fetchAndUpdate() {
-  // ─── OVERVIEW ─────────────────
-  try {
-    const r = await fetch('/api/overview');
-    if (!r.ok) return;
-    const d = await r.json();
-
-    // Status indicator
-    const dot = document.getElementById('status-dot');
-    const statusText = document.getElementById('status-text');
-    if (d.is_training) {
-      dot.className = 'status-dot training';
-      statusText.textContent = 'Training...';
-    } else if (d.status === 'online') {
-      dot.className = 'status-dot';
-      statusText.textContent = 'Live';
-    } else {
-      dot.className = 'status-dot offline';
-      statusText.textContent = 'Offline';
+    function setHTML(id, value) {
+      const el = $(id);
+      if (el) el.innerHTML = value;
     }
 
-    // KPI Cards
-    document.getElementById('balance').textContent = '$' + (d.balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-
-    const pnl = d.total_pnl || 0;
-    const pnlEl = document.getElementById('pnl');
-    pnlEl.textContent = fmt(pnl, '$');
-    pnlEl.className = 'metric ' + (pnl >= 0 ? 'green' : 'red');
-    document.getElementById('pnl-pct').textContent = (d.pnl_pct || 0).toFixed(2) + '%';
-
-    const wr = d.trade_win_rate;
-    const wrEl = document.getElementById('win-rate');
-    wrEl.textContent = wr !== undefined && wr !== null ? wr.toFixed(1) + '%' : '—';
-
-    document.getElementById('win-sub').textContent = `${d.total_wins||0}W / ${d.total_losses||0}L (${d.total_trades||0})`;
-
-    _activePositions = d.active_positions || [];
-    _historyPositions = d.trade_history || [];
-    
-    document.getElementById('open-pos').textContent = _activePositions.length;
-    document.getElementById('pos-sub').textContent = _activePositions.length === 1 ? '1 active trade' : _activePositions.length + ' active trades';
-
-    // Update positions table
-    renderPositionsTable();
-
-    // Fear & Greed
-    if (d.fear_greed) {
-      document.getElementById('fg-value').textContent = d.fear_greed.value || '?';
-      document.getElementById('fg-label').textContent = d.fear_greed.label || '?';
+    function fmtPrice(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '--';
+      if (Math.abs(n) >= 1000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+      if (Math.abs(n) >= 1) return `$${n.toFixed(4)}`;
+      if (Math.abs(n) >= 0.01) return `$${n.toFixed(4)}`;
+      return `$${n.toFixed(6)}`;
     }
 
-    // RL Stats
-    if (d.rl_stats) {
-      document.getElementById('rl-buffer').textContent = d.rl_stats.buffer_size || '0';
-      document.getElementById('rl-total').textContent = d.rl_stats.total_resolved || d.total_predictions || '0';
-      document.getElementById('rl-pending').textContent = d.pending_opportunities || '0';
+    function fmtPct(value, digits = 1) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '--';
+      return `${n.toFixed(digits)}%`;
     }
 
-    // Risk Status
-    if (d.risk_status) {
-      const rp = document.getElementById('risk-paused');
-      rp.textContent = d.risk_status.trading_paused ? '⛔ PAUSED' : '✅ Active';
-      rp.style.color = d.risk_status.trading_paused ? 'var(--red)' : 'var(--green)';
-
-      const dpnl = d.risk_status.daily_pnl || 0;
-      const dpEl = document.getElementById('risk-daily-pnl');
-      dpEl.textContent = fmt(dpnl, '$');
-      dpEl.style.color = dpnl >= 0 ? 'var(--green)' : 'var(--red)';
-
-      document.getElementById('risk-streak').textContent = d.risk_status.consecutive_losses || 0;
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
-    // Equity chart
-    if (d.equity_curve && d.equity_curve.length > 0) {
-      equityChart.data.labels = d.equity_curve.map(() => '');
-      equityChart.data.datasets[0].data = d.equity_curve.map(p => p.v);
+    function signalClass(dir) {
+      return dir === 'BULLISH' ? 'status-chip live' : 'status-chip paused';
+    }
+
+    function outcomeClass(outcome) {
+      return outcome === 'correct' ? 'result-chip win' : 'result-chip loss';
+    }
+
+    function positionPhase(row) {
+      if (!row) return { label: 'Unknown', cls: 'phase-chip pre', note: 'No state available.' };
+      if (row.thor_trail_active) {
+        return { label: 'Runner trail', cls: 'phase-chip runner', note: 'Bank was already hit and the runner stop is trailing above entry.' };
+      }
+      if (row.thor_bank_hit) {
+        return { label: 'Runner active', cls: 'phase-chip bank', note: 'Bank is hit. Remaining size is being managed as a runner.' };
+      }
+      return { label: 'Pre-bank', cls: 'phase-chip pre', note: 'Trade is still waiting for the first bank event.' };
+    }
+
+    function unrealizedPnl(row) {
+      const entry = Number(row.entry);
+      const current = Number(row.current_price);
+      const size = Number(row.size);
+      if (!Number.isFinite(entry) || !Number.isFinite(current) || !Number.isFinite(size)) return null;
+      if (row.direction === 'BULLISH') return (current - entry) * size;
+      return (entry - current) * size;
+    }
+
+    function bankProgress(row) {
+      const entry = Number(row.entry);
+      const bank = Number(row.bank_price || row.tp1);
+      const current = Number(row.current_price);
+      if (![entry, bank, current].every(Number.isFinite)) return 0;
+      const span = bank - entry;
+      if (span <= 0) return 0;
+      return Math.max(0, Math.min(100, ((current - entry) / span) * 100));
+    }
+
+    function stopPressure(row) {
+      const stop = Number(row.stop_loss);
+      const current = Number(row.current_price);
+      const bank = Number(row.bank_price || row.tp1);
+      if (![stop, current].every(Number.isFinite)) return 0;
+      const ref = Number.isFinite(bank) ? Math.max(Math.abs(bank - stop), 1e-8) : Math.max(Math.abs(current - stop), 1e-8);
+      return Math.max(0, Math.min(100, (Math.abs(current - stop) / ref) * 100));
+    }
+
+    function fetchJson(url) {
+      return fetch(url).then((r) => {
+        if (!r.ok) throw new Error(`${url} failed`);
+        return r.json();
+      }).catch(() => null);
+    }
+
+    function initCharts() {
+      const equityCtx = $('equityChart').getContext('2d');
+      const equityGradient = equityCtx.createLinearGradient(0, 0, 0, 280);
+      equityGradient.addColorStop(0, 'rgba(60, 228, 196, 0.30)');
+      equityGradient.addColorStop(1, 'rgba(60, 228, 196, 0.02)');
+
+      equityChart = new Chart(equityCtx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{
+            data: [],
+            borderColor: '#3ce4c4',
+            backgroundColor: equityGradient,
+            fill: true,
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.34
+          }]
+        },
+        options: {
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: {
+              display: false,
+              grid: { display: false }
+            },
+            y: {
+              ticks: {
+                color: '#7e94a5',
+                callback: (v) => Number(v).toLocaleString()
+              },
+              grid: {
+                color: 'rgba(255,255,255,0.05)'
+              }
+            }
+          }
+        }
+      });
+
+      const outcomeCtx = $('outcomeChart').getContext('2d');
+      outcomeChart = new Chart(outcomeCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Wins', 'Losses'],
+          datasets: [{
+            data: [0, 0],
+            backgroundColor: ['rgba(60, 228, 196, 0.72)', 'rgba(255, 111, 97, 0.72)'],
+            borderColor: ['#3ce4c4', '#ff6f61'],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          plugins: {
+            legend: {
+              labels: {
+                color: '#c1d3df',
+                font: { family: 'Space Grotesk' }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderOverview(data) {
+      state.overview = data;
+      if (!data) {
+        $('status-dot').className = 'status-led offline';
+        setText('status-text', 'Offline');
+        return;
+      }
+
+      const online = data.status === 'online';
+      $('status-dot').className = `status-led ${online ? '' : 'offline'} ${data.is_training ? 'training' : ''}`.trim();
+      setText('status-text', data.is_training ? 'Training' : (online ? 'Live' : 'Offline'));
+      $('runtime-chip').className = `status-chip ${data.is_training ? 'training' : (online ? 'live' : 'paused')}`;
+      setText('runtime-chip', data.is_training ? 'Training' : (online ? 'Connected' : 'Offline'));
+
+      setText('uptime', data.uptime || '--');
+      setText('hero-generation', String(data.generation ?? '--'));
+      setText('hero-predictions', (data.total_predictions || 0).toLocaleString());
+      setText('hero-queue', `${data.queue_depth || 0}`);
+
+      setText('balance', fmtPrice(data.balance));
+      setText('hero-balance', fmtPrice(data.balance));
+      setText('hero-balance-note', `${data.trade_win_rate || 0}% win rate / ${data.total_trades || 0} trades`);
+      setText('pnl', `${data.total_pnl >= 0 ? '+' : ''}${fmtPrice(data.total_pnl)}`);
+      setText('pnl-pct', fmtPct(data.pnl_pct || 0, 2));
+      setText('win-rate', fmtPct(data.trade_win_rate || 0, 1));
+      setText('win-sub', `${data.total_wins || 0}W / ${data.total_losses || 0}L`);
+      setText('open-pos', `${data.thor_active_positions || 0}`);
+      setText('pos-sub', `${data.total_trades || 0} executed trades on ledger`);
+      setText('max-dd', fmtPct(data.max_drawdown || 0, 2));
+      setText('current-dd', `current ${fmtPct(data.current_drawdown || 0, 2)}`);
+
+      setText('fg-value', data.fear_greed?.value ?? '--');
+      setText('fg-label', data.fear_greed?.label || 'unavailable');
+      setText('rl-total', (data.total_predictions || 0).toLocaleString());
+      setText('rl-pending', (data.pending_opportunities || 0).toLocaleString());
+      setText('pipeline-mode', data.rl_enabled ? 'Thor + RL follow-up' : 'Thor-only');
+      setText('pipeline-copy', data.rl_enabled ? 'prediction memory and follow-up active' : 'paper route aligned to sim');
+      setText('risk-paused', data.risk_status?.trading_paused ? 'Paused' : 'Active');
+      setText('risk-daily-pnl', `${Number(data.risk_status?.daily_pnl || 0) >= 0 ? '+' : ''}${fmtPrice(data.risk_status?.daily_pnl || 0)}`);
+      setText('risk-streak', String(data.risk_status?.consecutive_losses || 0));
+      setText('risk-size-mult', `${Number(data.risk_status?.size_multiplier || 1).toFixed(2)}x`);
+
+      const legacyWarning = $('legacy-warning');
+      if ((data.legacy_active_positions || 0) > 0) {
+        legacyWarning.style.display = 'block';
+        legacyWarning.innerHTML = `<strong>Legacy state detected.</strong> ${data.legacy_active_positions} active positions in paper state are not Thor-executed records. They are quarantined away from the main Thor ledger but still exist in state.`;
+      } else {
+        legacyWarning.style.display = 'none';
+        legacyWarning.innerHTML = '';
+      }
+
+      const alerts = data.drift_alerts || [];
+      if (alerts.length === 0) {
+        setHTML('drift-alerts-container', '');
+      } else {
+        setHTML('drift-alerts-container', alerts.map((a) => `
+          <div class="alert-item">
+            <h4>${escapeHtml(a.type || 'alert')}</h4>
+            <p>${escapeHtml(a.msg || '')}</p>
+          </div>
+        `).join(''));
+      }
+
+      const curve = data.equity_curve || [];
+      equityChart.data.labels = curve.map((_, i) => i + 1);
+      equityChart.data.datasets[0].data = curve.map((pt) => pt.v);
       equityChart.update('none');
+
+      renderPositions(data);
     }
 
-    // Positions table
-    const posBody = document.getElementById('positions-body');
-    if (positions.length === 0) {
-      posBody.innerHTML = '<tr><td colspan="5" class="table-empty">No open positions</td></tr>';
-    } else {
-      posBody.innerHTML = positions.map(p => {
-        const dirTag = p.direction === 'BULLISH' ? 'bull' : 'bear';
-        const dirLabel = p.direction === 'BULLISH' ? '▲ LONG' : '▼ SHORT';
-        const safeP = encodeURIComponent(JSON.stringify(p));
-        return `<tr class="clickable" onclick="openPositionModal(decodeURIComponent('${safeP}'))">
-          <td><b>${p.symbol}</b></td>
-          <td><span class="tag ${dirTag}">${dirLabel}</span></td>
-          <td>${fmtPrice(p.entry)}</td>
-          <td style="font-family:var(--mono);font-size:12px">${fmtPrice(p.size_usd || 0)}</td>
-          <td>${(p.confidence||0).toFixed(1)}%</td>
-        </tr>`;
-      }).join('');
+    function renderPositions(data) {
+      const head = $('positions-head');
+      const body = $('positions-body');
+      const title = $('position-card-title');
+
+      if (state.positionView === 'active') {
+        title.textContent = 'Executed positions';
+        $('history-controls').style.display = 'none';
+        head.innerHTML = `
+          <tr>
+            <th>Symbol</th>
+            <th>Engine</th>
+            <th>Entry</th>
+            <th>Mark</th>
+            <th>uPnL</th>
+            <th>Phase</th>
+            <th>Conf</th>
+          </tr>
+        `;
+
+        const rows = data.active_positions || [];
+        if (rows.length === 0) {
+          body.innerHTML = '<tr><td colspan="7" class="table-empty">No active Thor executions.</td></tr>';
+          return;
+        }
+
+        body.innerHTML = rows.map((row) => {
+          const upnl = unrealizedPnl(row);
+          const phase = positionPhase(row);
+          const color = upnl >= 0 ? 'var(--teal)' : 'var(--red)';
+          const encoded = encodeURIComponent(JSON.stringify(row));
+          return `
+            <tr class="clickable" onclick="openPositionModal(decodeURIComponent('${encoded}'))">
+              <td class="symbol-cell">${escapeHtml(row.symbol)}</td>
+              <td>${escapeHtml(row.executed_by || 'Thor')}</td>
+              <td class="mono">${fmtPrice(row.entry)}</td>
+              <td class="mono">${fmtPrice(row.current_price)}</td>
+              <td class="mono" style="color:${color}">${upnl === null ? '--' : `${upnl >= 0 ? '+' : ''}${fmtPrice(upnl)}`}</td>
+              <td><span class="${phase.cls}">${phase.label}</span></td>
+              <td class="mono">${Number(row.confidence || 0).toFixed(1)}%</td>
+            </tr>
+          `;
+        }).join('');
+      } else {
+        title.textContent = 'Execution history';
+        $('history-controls').style.display = 'flex';
+        head.innerHTML = `
+          <tr>
+            <th>Symbol</th>
+            <th>Engine</th>
+            <th>Barrier</th>
+            <th>PnL</th>
+            <th>Result</th>
+            <th>Layers</th>
+            <th>Exit</th>
+          </tr>
+        `;
+
+        let rows = data.trade_history || [];
+        if (state.historyFilter === 'wins') rows = rows.filter((r) => Number(r.pnl || 0) > 0);
+        if (state.historyFilter === 'losses') rows = rows.filter((r) => Number(r.pnl || 0) <= 0);
+        setText('history-summary', `${rows.length} records in current filter`);
+
+        if (rows.length === 0) {
+          body.innerHTML = '<tr><td colspan="7" class="table-empty">No history in this filter.</td></tr>';
+          return;
+        }
+
+        body.innerHTML = rows.slice(0, 30).map((row) => {
+          const resultCls = Number(row.pnl || 0) > 0 ? 'result-chip win' : 'result-chip loss';
+          const resultTxt = Number(row.pnl || 0) > 0 ? 'Win' : 'Loss';
+          return `
+            <tr>
+              <td class="symbol-cell">${escapeHtml(row.symbol)}</td>
+              <td>${escapeHtml(row.executed_by || row.display_agent || 'Thor')}</td>
+              <td class="mono">${escapeHtml(row.barrier_hit || '--')}</td>
+              <td class="mono" style="color:${Number(row.pnl || 0) > 0 ? 'var(--teal)' : 'var(--red)'}">${Number(row.pnl || 0) >= 0 ? '+' : ''}${fmtPrice(row.pnl || 0)}</td>
+              <td><span class="${resultCls}">${resultTxt}</span></td>
+              <td class="mono">${row.layers ?? 1}</td>
+              <td class="mono faint">${escapeHtml((row.exit_time || '').replace('T', ' ').slice(0, 19) || '--')}</td>
+            </tr>
+          `;
+        }).join('');
+      }
     }
 
-    // Drift alerts
-    const dc = document.getElementById('drift-alerts-container');
-    if (d.drift_alerts && d.drift_alerts.length > 0) {
-      dc.style.display = 'block';
-      dc.innerHTML = d.drift_alerts.map(a => `<div class="drift-alert">⚠️ ${a.msg}</div>`).join('');
-    } else {
-      dc.style.display = 'none';
+    function renderThor(data) {
+      state.thor = data;
+      if (!data) return;
+
+      setText('thor-gen', String(data.generation ?? '--'));
+      setText('thor-brier', data.brier != null ? Number(data.brier).toFixed(4) : '--');
+      if (data.last_trained_ts) {
+        const diff = Math.max(0, (Date.now() / 1000) - data.last_trained_ts);
+        const age = diff < 3600 ? `${Math.floor(diff / 60)}m ago`
+          : diff < 86400 ? `${Math.floor(diff / 3600)}h ago`
+          : `${Math.floor(diff / 86400)}d ago`;
+        setText('thor-trained', age);
+      } else {
+        setText('thor-trained', 'not trained');
+      }
+
+      const p = data.params || {};
+      setText('thor-score', p.min_score != null ? Number(p.min_score).toFixed(1) : '--');
+      setText('thor-sl-atr', p.sl_atr != null ? Number(p.sl_atr).toFixed(2) : '--');
+      setText('thor-bank-atr', p.bank_atr != null ? Number(p.bank_atr).toFixed(2) : '--');
+      setText('thor-bank-frac', p.bank_fraction != null ? fmtPct(Number(p.bank_fraction) * 100, 0) : '--');
+      setText('thor-trail-atr', p.runner_trail_atr != null ? Number(p.runner_trail_atr).toFixed(2) : '--');
+      setText('thor-trail-act', p.trail_activate_atr != null ? Number(p.trail_activate_atr).toFixed(2) : '--');
+      setText('thor-mae-bars', p.mae_veto_bars != null ? String(p.mae_veto_bars) : '--');
+      setText('thor-mae-atr', p.mae_veto_atr != null ? Number(p.mae_veto_atr).toFixed(2) : '--');
+      setText('thor-ctx-score', p.context_min_score != null ? Number(p.context_min_score).toFixed(1) : '--');
+      setText('thor-max-pre', p.max_bars_pre_bank != null ? String(p.max_bars_pre_bank) : '--');
+      setText('thor-compound', p.compound_mode || '--');
+
+      const nike = data.nike || {};
+      setText('nike-status', nike.active ? 'ACTIVE' : 'offline');
+      setText('nike-watch', nike.symbols_watched ?? '--');
+      setText('nike-today', nike.signals_today ?? '--');
+      setText('nike-total', nike.total_signals ?? '--');
+
+      const wf = data.wf_results || {};
+      const growth = wf.growth_pct ?? wf.total_growth_pct ?? wf.growth;
+      const dd = wf.max_drawdown_pct ?? wf.max_dd ?? wf.max_dd_pct;
+      const pf = wf.profit_factor ?? wf.pf;
+      const trades = wf.n_trades ?? wf.trades;
+      setText('wf-run-id', data.latest_wf_run || 'no wf run found');
+      setText('wf-growth', typeof growth === 'number' ? `+${growth.toFixed(1)}%` : '--');
+      setText('wf-dd', typeof dd === 'number' ? fmtPct(dd, 2) : '--');
+      setText('wf-pf', typeof pf === 'number' ? Number(pf).toFixed(3) : '--');
+      setText('wf-trades', trades != null ? `${trades} trades` : 'no trade count');
+
+      setText('thor-paper-balance', fmtPrice(data.paper_perf?.balance || 0));
+      setText('thor-paper-pnl', `${Number(data.paper_perf?.pnl || 0) >= 0 ? '+' : ''}${fmtPrice(data.paper_perf?.pnl || 0)}`);
     }
 
-    // Uptime
-    document.getElementById('uptime').textContent = d.uptime || '—';
+    function renderPredictions(data) {
+      state.predictions = data;
+      if (!data) return;
 
-  } catch(e) { console.error('overview error', e); }
+      const picks = data.daily_picks || [];
+      const outcomes = data.recent_predictions || [];
+      setText('pred-count', String(picks.length));
+      setText('outcome-count', String(outcomes.length));
 
-  // ─── PREDICTIONS ─────────────────
-  try {
-    const r = await fetch('/api/predictions');
-    if (!r.ok) return;
-    const d = await r.json();
+      const predsBody = $('preds-body');
+      if (picks.length === 0) {
+        predsBody.innerHTML = '<tr><td colspan="6" class="table-empty">Waiting for live picks...</td></tr>';
+      } else {
+        predsBody.innerHTML = picks.slice(0, 20).map((p) => {
+          const encoded = encodeURIComponent(JSON.stringify(p));
+          const stamp = p.timestamp ? new Date(p.timestamp * 1000).toLocaleTimeString() : '--';
+          return `
+            <tr class="clickable" onclick="openSignalModal(decodeURIComponent('${encoded}'))">
+              <td class="mono faint">${stamp}</td>
+              <td class="symbol-cell">${escapeHtml(p.symbol)}</td>
+              <td><span class="${signalClass(p.direction)}">${escapeHtml(p.direction || '--')}</span></td>
+              <td class="mono">${Number(p.confidence || 0).toFixed(1)}%</td>
+              <td>${escapeHtml(p.status || 'PENDING')}</td>
+              <td class="mono">${fmtPrice(p.entry_price)}</td>
+            </tr>
+          `;
+        }).join('');
+      }
 
-    // Daily picks / alerts
-    const picks = d.daily_picks || [];
-    const body = document.getElementById('preds-body');
-    if (picks.length === 0) {
-      body.innerHTML = '<tr><td colspan="6" class="table-empty">Waiting for predictions...</td></tr>';
-    } else {
-      body.innerHTML = picks.slice(0, 25).map(p => {
-        const dirTag = p.direction === 'BULLISH' ? 'bull' : (p.direction === 'BEARISH' ? 'bear' : 'neutral');
-        const t = p.timestamp ? new Date(p.timestamp * 1000).toLocaleTimeString() : '—';
-        const statusTag = p.status === 'HIT_TP' ? 'bull' : (p.status === 'HIT_SL' ? 'bear' : 'accent');
-        
-        let safeP = {
-           symbol: p.symbol, direction: p.direction,
-           specialist_probs: p.specialist_probs || [],
-           ppo_action: p.ppo_action, ppo_size_mult: p.ppo_size_mult,
-           shap_summary: p.shap_summary
-        };
-        const pStr = encodeURIComponent(JSON.stringify(safeP));
+      const outcomesBody = $('outcomes-body');
+      if (outcomes.length === 0) {
+        outcomesBody.innerHTML = '<tr><td colspan="5" class="table-empty">Waiting for closed outcomes...</td></tr>';
+      } else {
+        outcomesBody.innerHTML = outcomes.slice(0, 20).map((p) => `
+          <tr>
+            <td class="symbol-cell">${escapeHtml(p.symbol)}</td>
+            <td><span class="${signalClass(p.direction)}">${escapeHtml(p.direction || '--')}</span></td>
+            <td class="mono">${Number(p.confidence || 0).toFixed(1)}%</td>
+            <td><span class="${outcomeClass(p.outcome)}">${p.outcome === 'correct' ? 'WIN' : 'LOSS'}</span></td>
+            <td class="mono">${fmtPct(p.actual_move || 0, 2)}</td>
+          </tr>
+        `).join('');
+      }
 
-        return `<tr class="clickable" onclick="openThoughtModal(decodeURIComponent('${pStr}'))">
-          <td style="font-family:var(--mono);font-size:11px;color:var(--text-muted)">${t}</td>
-          <td><b>${p.symbol}</b></td>
-          <td><span class="tag ${dirTag}">${p.direction}</span></td>
-          <td>${(p.confidence || 0).toFixed(1)}%</td>
-          <td><span class="tag ${statusTag}">${p.status || 'PENDING'}</span></td>
-          <td style="font-family:var(--mono)">${p.entry_price ? fmtPrice(p.entry_price) : '—'}</td>
-        </tr>`;
-      }).join('');
-    }
-
-    // RL Outcomes
-    const outcomes = d.recent_predictions || [];
-    const oBody = document.getElementById('outcomes-body');
-    if (outcomes.length === 0) {
-      oBody.innerHTML = '<tr><td colspan="5" class="table-empty">Waiting for outcomes (need 1h)...</td></tr>';
-    } else {
-      oBody.innerHTML = outcomes.slice(0, 20).map(p => {
-        const dirTag = p.direction === 'BULLISH' ? 'bull' : 'bear';
-        const outcomeTag = p.outcome === 'correct' ? 'bull' : 'bear';
-        return `<tr>
-          <td><b>${p.symbol}</b></td>
-          <td><span class="tag ${dirTag}">${p.direction}</span></td>
-          <td>${(p.confidence || 0).toFixed(1)}%</td>
-          <td><span class="tag ${outcomeTag}">${p.outcome === 'correct' ? '✅ WIN' : '❌ LOSS'}</span></td>
-          <td style="font-family:var(--mono)">${(p.actual_move || 0).toFixed(2)}%</td>
-        </tr>`;
-      }).join('');
-
-      // Update outcome chart
-      const wins = outcomes.filter(o => o.outcome === 'correct').length;
-      const losses = outcomes.filter(o => o.outcome === 'wrong').length;
-      outcomeChart.data.labels = ['Wins', 'Losses'];
+      const wins = outcomes.filter((o) => o.outcome === 'correct').length;
+      const losses = outcomes.filter((o) => o.outcome === 'wrong').length;
       outcomeChart.data.datasets[0].data = [wins, losses];
-      outcomeChart.data.datasets[0].backgroundColor = ['rgba(0,230,118,0.6)', 'rgba(255,82,82,0.6)'];
       outcomeChart.update('none');
     }
 
-  } catch(e) { console.error('predictions error', e); }
+    function renderModels(data) {
+      state.models = data;
+      if (!data) return;
 
-  // ─── MODELS ─────────────────
-  try {
-    const r = await fetch('/api/models');
-    if (!r.ok) return;
-    const d = await r.json();
-    const specialists = d.specialists || [];
-    const brierScores = d.brier_scores || {};
+      setText('model-gen', String(data.generation ?? '--'));
+      setText('mon-accuracy', data.monitor_stats?.rolling_accuracy != null ? fmtPct(data.monitor_stats.rolling_accuracy, 1) : '--');
+      setText('mon-ece', data.monitor_stats?.calibration_error != null ? Number(data.monitor_stats.calibration_error).toFixed(4) : '--');
+      setText('mon-drift', data.monitor_stats?.feature_drift_score != null ? Number(data.monitor_stats.feature_drift_score).toFixed(2) : '--');
+      setText('mon-total', (data.monitor_stats?.total_predictions || 0).toLocaleString());
 
-    document.getElementById('model-gen').textContent = d.generation || 0;
+      const brier = data.brier_scores || {};
+      const body = $('models-body');
+      const specialists = data.specialists || [];
+      if (specialists.length === 0) {
+        body.innerHTML = '<tr><td colspan="6" class="table-empty">No specialist registry data.</td></tr>';
+        return;
+      }
 
-    // Agent cards — CLICKABLE
-    const grid = document.getElementById('agents-grid');
-    _cachedSpecialists = specialists;
-    _cachedBrier = brierScores;
-    grid.innerHTML = specialists.map(s => {
-      const icon = AGENT_ICONS[s.name] || '🤖';
-      const bs = brierScores[s.name] || {};
-      const brierVal = bs.rolling_avg !== null && bs.rolling_avg !== undefined ? bs.rolling_avg.toFixed(4) : '—';
-      const statusTag = s.has_model ? '<span class="tag ready">ready</span>' : '<span class="tag offline">no model</span>';
-      const details = AGENT_DETAILS[s.name] || {};
-      return `<div class="agent-card clickable" onclick="openAgentModal('${s.name}')">
-        <div class="agent-header">
-          <div class="agent-avatar">${icon}</div>
-          <div>
-            <div class="agent-name">${s.name}</div>
-            ${statusTag}
-          </div>
-        </div>
-        <div class="agent-desc">${s.description || ''}</div>
-        <div class="agent-stats">
-          <div class="agent-stat">
-            <div class="agent-stat-label">Gen</div>
-            <div class="agent-stat-value">${s.generation || 0}</div>
-          </div>
-          <div class="agent-stat">
-            <div class="agent-stat-label">Weight</div>
-            <div class="agent-stat-value" style="color:var(--accent-2)">${((s.weight||0)*100).toFixed(1)}%</div>
-          </div>
-          <div class="agent-stat">
-            <div class="agent-stat-label">Brier</div>
-            <div class="agent-stat-value">${brierVal}</div>
-          </div>
-          <div class="agent-stat">
-            <div class="agent-stat-label">Mask</div>
-            <div class="agent-stat-value" style="font-size:10px;color:var(--text-muted)">${(s.feature_mask || '—').replace('domain_', '')}</div>
-          </div>
-        </div>
-      </div>`;
-    }).join('');
-
-    // Brier bars
-    const barsEl = document.getElementById('brier-bars');
-    barsEl.innerHTML = specialists.map(s => {
-      const bs = brierScores[s.name] || {};
-      const b = bs.rolling_avg || 0.25;
-      const pct = Math.min(100, (b / 0.25) * 100);
-      const col = b < 0.15 ? 'var(--green)' : b < 0.20 ? 'var(--yellow)' : 'var(--red)';
-      return `<div class="brier-row">
-        <div class="brier-name">${AGENT_ICONS[s.name] || '🤖'} ${s.name}</div>
-        <div class="brier-bar-bg"><div class="brier-bar-fill" style="width:${pct}%;background:${col}"></div></div>
-        <div class="brier-value">${b.toFixed(4)}</div>
-      </div>`;
-    }).join('');
-
-    // Monitor stats
-    if (d.monitor_stats) {
-      const ms = d.monitor_stats;
-      document.getElementById('mon-accuracy').textContent = ms.rolling_accuracy !== null && ms.rolling_accuracy !== undefined ? ms.rolling_accuracy.toFixed(1) + '%' : '—';
-      document.getElementById('mon-ece').textContent = ms.calibration_error !== null && ms.calibration_error !== undefined ? ms.calibration_error.toFixed(4) : '—';
-      document.getElementById('mon-drift').textContent = ms.feature_drift_score !== undefined ? ms.feature_drift_score.toFixed(2) : '—';
-      document.getElementById('mon-total').textContent = ms.total_predictions || '0';
-    }
-
-  } catch(e) { console.error('models error', e); }
-
-  // ─── SYSTEM ─────────────────
-  try {
-    const r = await fetch('/api/system');
-    if (!r.ok) return;
-    const d = await r.json();
-
-    document.getElementById('queue-size').textContent = d.queue_depth ?? 0;
-    document.getElementById('queue-max').textContent = '/ ' + (d.queue_max || 0) + ' max';
-    document.getElementById('latency').textContent = (d.avg_compute_ms !== undefined && d.avg_compute_ms !== null) ? d.avg_compute_ms.toFixed(1) + 'ms' : '—';
-    document.getElementById('throughput').textContent = (d.coins_per_min !== undefined && d.coins_per_min !== null) ? d.coins_per_min.toFixed(1) : '—';
-    document.getElementById('total-processed').textContent = ((d.total_processed || 0) + (d.total_predictions || 0)).toLocaleString() + ' total processed';
-
-    // Risk events
-    const re = d.risk_events || [];
-    const reEl = document.getElementById('risk-events');
-    if (re.length === 0) {
-      reEl.innerHTML = '<div class="table-empty">No recent risk events</div>';
-    } else {
-      reEl.innerHTML = re.slice(0, 15).map(e => {
-        const t = e.time ? new Date(e.time * 1000).toLocaleTimeString() : '';
-        return `<div class="risk-event">
-          <span class="re-type">${e.type || '?'}</span>
-          <span class="re-detail">${e.details || ''}</span>
-          <span style="color:var(--text-muted);font-size:11px;font-family:var(--mono)">${t}</span>
-        </div>`;
+      body.innerHTML = specialists.map((s) => {
+        const bs = brier[s.internal_name] || {};
+        const score = bs.rolling_avg ?? bs.score;
+        return `
+          <tr>
+            <td class="symbol-cell">${escapeHtml(s.name)}</td>
+            <td class="mono">${s.weight != null ? `${(Number(s.weight) * 100).toFixed(1)}%` : '--'}</td>
+            <td class="mono">${s.generation ?? 0}</td>
+            <td class="mono">${score != null ? Number(score).toFixed(4) : '--'}</td>
+            <td>${s.has_model ? '<span class="status-chip live">Ready</span>' : '<span class="status-chip paused">Offline</span>'}</td>
+            <td>${escapeHtml(s.description || '')}</td>
+          </tr>
+        `;
       }).join('');
     }
 
-    // Log
-    const logEl = document.getElementById('log-tail');
-    logEl.textContent = (d.log_lines || []).join('\n') || 'No log data';
-    logEl.scrollTop = logEl.scrollHeight;
+    function renderSystem(data) {
+      state.system = data;
+      if (!data) return;
 
-    // ZEUS LLM Data Push (hijacks settings variable)
-    if (d.zeus_logs) {
-        currentSettings = d.zeus_logs;
-        if (document.getElementById('tab-settings').classList.contains('active')) {
-             renderSettingsState();
-        }
+      setText('queue-size', String(data.queue_depth || 0));
+      setText('queue-max', `/ ${data.queue_max || 0} max`);
+      setText('latency', data.avg_compute_ms != null ? `${Number(data.avg_compute_ms).toFixed(1)}ms` : '--');
+      setText('throughput', data.coins_per_min != null ? `${Number(data.coins_per_min).toFixed(1)} coins/min` : '--');
+      setText('system-throughput', data.coins_per_min != null ? Number(data.coins_per_min).toFixed(1) : '0.0');
+      setText('fetch-ms', data.avg_fetch_ms != null ? `${Number(data.avg_fetch_ms).toFixed(1)}ms` : '--');
+      setText('total-processed', `${((data.total_processed || 0) + (state.overview?.total_predictions || 0)).toLocaleString()} processed`);
+      setText('result-queue', String(data.result_queue || 0));
+      setText('hero-queue', String(data.queue_depth || 0));
+
+      const events = data.risk_events || [];
+      if (events.length === 0) {
+        setHTML('risk-events', '<div class="empty-state">No recent risk events.</div>');
+      } else {
+        setHTML('risk-events', events.slice(0, 15).map((e) => `
+          <div class="event-item">
+            <h4>${escapeHtml(e.type || 'risk-event')}</h4>
+            <p>${escapeHtml(e.details || '')}</p>
+            <div class="event-meta">${e.time ? new Date(e.time * 1000).toLocaleString() : '--'}</div>
+          </div>
+        `).join(''));
+      }
+
+      setText('log-tail', (data.log_lines || []).join('\n') || 'No log data.');
+      renderOracle(data.zeus_logs || []);
     }
 
-  } catch(e) { console.error('system error', e); }
-}
+    function renderOracle(logs) {
+      setText('oracle-count', String(logs.length || 0));
+      if (!logs || logs.length === 0) {
+        setHTML('oracle-feed', '<div class="empty-state">No audit entries recorded yet.</div>');
+        return;
+      }
 
-// Clock
-setInterval(() => {
-  document.getElementById('live-clock').textContent = new Date().toLocaleTimeString();
-}, 1000);
-
-initCharts();
-fetchAndUpdate();
-setInterval(fetchAndUpdate, 5000);
-
-// ═══════════════════ AGENT MODAL ═══════════════════
-function openAgentModal(name) {
-  const s = _cachedSpecialists.find(x => x.name === name);
-  const details = AGENT_DETAILS[name] || {};
-  const bs = _cachedBrier[name] || {};
-  const icon = AGENT_ICONS[name] || '🤖';
-
-  document.getElementById('modal-avatar').textContent = icon;
-  document.getElementById('modal-name').textContent = name;
-  document.getElementById('modal-role').textContent = details.role || '';
-  document.getElementById('modal-desc').textContent = s ? s.description : '';
-  document.getElementById('modal-domain').textContent = details.domain || 'N/A';
-
-  // Stats
-  const brierVal = bs.rolling_avg != null ? bs.rolling_avg.toFixed(4) : '—';
-  const brierColor = (bs.rolling_avg || 0.25) < 0.15 ? 'var(--green)' : (bs.rolling_avg || 0.25) < 0.20 ? 'var(--yellow)' : 'var(--red)';
-  document.getElementById('modal-stats').innerHTML = `
-    <div class="modal-stat"><div class="label">Generation</div><div class="val" style="color:var(--accent-2)">${s ? s.generation : 0}</div></div>
-    <div class="modal-stat"><div class="label">Ensemble Weight</div><div class="val" style="color:var(--accent-2)">${s ? ((s.weight||0)*100).toFixed(1)+'%' : '—'}</div></div>
-    <div class="modal-stat"><div class="label">Brier Score</div><div class="val" style="color:${brierColor}">${brierVal}</div></div>
-    <div class="modal-stat"><div class="label">Recency Boost</div><div class="val">${s ? (s.recency_boost||1).toFixed(1)+'×' : '—'}</div></div>
-  `;
-
-  // Math
-  document.getElementById('modal-math').innerHTML = details.math
-    ? `<div class="math-block">${details.math}</div><div style="font-size:10px;color:var(--text-muted);margin-top:6px;font-style:italic">📚 ${details.ref || ''}</div>`
-    : '<p style="color:var(--text-muted)">No math details available</p>';
-
-  // Hyperparams
-  if (s && s.hyperparams) {
-    const hp = typeof s.hyperparams === 'object' ? s.hyperparams : {};
-    document.getElementById('modal-hyperparams').innerHTML = `<div class="math-block">${Object.entries(hp).map(([k,v]) => `${k}: ${v}`).join('\n')}</div>`;
-  } else {
-    document.getElementById('modal-hyperparams').innerHTML = '<p style="color:var(--text-muted)">Not available</p>';
-  }
-
-  document.getElementById('agent-modal').classList.add('open');
-}
-
-function closeModal() {
-  document.getElementById('agent-modal').classList.remove('open');
-}
-
-document.addEventListener('keydown', e => { 
-  if (e.key === 'Escape') {
-    closeModal();
-    closeThoughtModal();
-  }
-});
-
-// ═══════════════════ THOUGHT PROCESS MODAL ═══════════════════
-function openThoughtModal(payloadStr) {
-  let p = JSON.parse(payloadStr);
-
-  document.getElementById('thought-symbol').textContent = p.symbol;
-  document.getElementById('thought-dir').textContent = p.direction;
-  document.getElementById('thought-dir').className = 'tag ' + (p.direction === 'BULLISH' ? 'green' : 'red');
-
-  let actionText = 'Approved ✅';
-  if (p.ppo_action === 0) actionText = 'Vetoed ❌';
-  if (p.ppo_action === undefined || p.ppo_action === null) actionText = 'N/A';
-  
-  document.getElementById('thought-ppo-action').textContent = actionText;
-  document.getElementById('thought-ppo-size').textContent = (p.ppo_size_mult !== undefined) ? p.ppo_size_mult.toFixed(2) + '×' : 'N/A';
-
-  let specialistsHtml = '';
-  if (p.specialist_probs && p.specialist_probs.length === 7) {
-    const names = ['Athena (Trend)', 'Ares (Crush)', 'Hermes (Range)', 'Hephaestus (Struct)', 'Nike (Impulse)', 'Artemis (Stealth)', 'Chronos (Rev)'];
-    for(let i=0; i<7; i++) {
-        let prob = p.specialist_probs[i];
-        let pct = (prob*100).toFixed(1);
-        let barColor = prob > 0.5 ? 'var(--green)' : 'var(--red)';
-        let fillWidth = prob > 0.5 ? ((prob-0.5)*200) : ((0.5-prob)*200); // 0-100% of half
-        fillWidth = Math.min(100, Math.max(0, fillWidth));
-        
-        let trackBg = 'rgba(255,255,255,0.05)';
-        
-        let barHtml = "";
-        if (prob >= 0.5) {
-            // bull: draw from center to right
-            barHtml = `<div style="flex:1; background:${trackBg}; border-radius:4px; height:8px; display:flex; align-items:center; overflow:hidden;">
-               <div style="width:50%;"></div>
-               <div style="width:50%; display:flex; justify-content:flex-start;">
-                 <div style="height:100%; width:${fillWidth}%; background:${barColor};"></div>
-               </div>
-            </div>`;
-        } else {
-            // bear: draw from center to left
-            barHtml = `<div style="flex:1; background:${trackBg}; border-radius:4px; height:8px; display:flex; align-items:center; overflow:hidden;">
-               <div style="width:50%; display:flex; justify-content:flex-end;">
-                 <div style="height:100%; width:${fillWidth}%; background:${barColor};"></div>
-               </div>
-               <div style="width:50%;"></div>
-            </div>`;
-        }
-
-        specialistsHtml += `
-          <div style="margin-bottom:8px;">
-            <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px; color:var(--text-secondary);">
-              <span>${names[i]}</span>
-              <span>${pct}% (Bull)</span>
-            </div>
-            ${barHtml}
+      setHTML('oracle-feed', logs.map((log) => {
+        const stamp = log.timestamp ? new Date(log.timestamp).toLocaleString() : '--';
+        const summary = log.summary || log.commentary || log.analysis || 'No summary text on this audit record.';
+        const overrides = log.overrides ? JSON.stringify(log.overrides, null, 2) : null;
+        return `
+          <div class="feed-item">
+            <h4>${escapeHtml(log.model || 'Zeus audit entry')}</h4>
+            <p>${escapeHtml(summary)}</p>
+            ${overrides ? `<div class="math-block" style="margin-top:10px;">${escapeHtml(overrides)}</div>` : ''}
+            <div class="feed-meta">${escapeHtml(stamp)}</div>
           </div>
         `;
-    }
-  } else {
-    specialistsHtml = '<p style="color:var(--text-muted);font-size:12px;">Specialist vote breakdown not available for this record.</p>';
-  }
-  document.getElementById('thought-specialists').innerHTML = specialistsHtml;
-
-  if (p.shap_summary) {
-    document.getElementById('thought-shap').textContent = p.shap_summary;
-    document.getElementById('thought-shap-sec').style.display = 'block';
-  } else {
-    document.getElementById('thought-shap-sec').style.display = 'none';
-  }
-
-  document.getElementById('thought-modal').classList.add('open');
-}
-
-function closeThoughtModal() {
-  document.getElementById('thought-modal').classList.remove('open');
-}
-// Position Modal Handler
-function openPositionModal(dataStr) {
-  const p = JSON.parse(dataStr);
-  const m = document.getElementById('pos-modal');
-  
-  const dirTag = p.direction === 'BULLISH' ? 'bull' : 'bear';
-  const sizeUsd = typeof p.size_usd === 'number' ? fmtPrice(p.size_usd) : '—';
-  const tokens = typeof p.size === 'number' ? p.size.toFixed(4) : '—';
-  
-  document.getElementById('pos-modal-sym').textContent = p.symbol;
-  document.getElementById('pos-modal-dir').innerHTML = `<span class="tag ${dirTag}">${p.direction}</span>`;
-  document.getElementById('pos-modal-entry').textContent = fmtPrice(p.entry);
-  document.getElementById('pos-modal-market').textContent = p.current_price ? fmtPrice(p.current_price) : 'Fetching...';
-  document.getElementById('pos-modal-size').textContent = `${sizeUsd} (${tokens} units)`;
-  document.getElementById('pos-modal-conf').textContent = (p.confidence||0).toFixed(1) + '%';
-  
-  document.getElementById('pos-modal-tp1').textContent = p.tp1 ? fmtPrice(p.tp1) : '—';
-  document.getElementById('pos-modal-tp2').textContent = p.tp2 ? fmtPrice(p.tp2) : '—';
-  document.getElementById('pos-modal-tp3').textContent = p.tp3 ? fmtPrice(p.tp3) : '—';
-  document.getElementById('pos-modal-sl').textContent = p.stop_loss ? fmtPrice(p.stop_loss) : '—';
-
-  // ─── Barrier Hit & Distance Logic ─────────────────
-  const cp = p.current_price || 0;
-  const isBull = p.direction === 'BULLISH';
-  
-  const updateIndicator = (id, targetVal, isTp) => {
-    const el = document.getElementById(id).parentElement;
-    let icon = el.querySelector('.barrier-hit-icon');
-    if (!icon) {
-        icon = document.createElement('div');
-        icon.className = 'barrier-hit-icon';
-        el.appendChild(icon);
+      }).join(''));
     }
 
-    let distHtml = '';
-    if (targetVal && cp > 0) {
-        const diff = isTp ? (targetVal - cp) : (cp - targetVal);
-        const distPct = (diff / cp) * 100;
-        const reached = isTp ? (isBull ? cp >= targetVal : cp <= targetVal) : (isBull ? cp <= targetVal : cp >= targetVal);
-        
-        if (reached) {
-            icon.className = 'barrier-hit-icon hit' + (isTp ? '' : ' sl');
-            icon.innerHTML = isTp ? '✓' : '✕';
-            el.style.borderColor = isTp ? 'rgba(0,255,150,0.3)' : 'rgba(255,82,82,0.3)';
-            el.style.background = isTp ? 'rgba(0,255,150,0.05)' : 'rgba(255,82,82,0.05)';
-            distHtml = `<div class="dist-tag" style="color:var(--green)">REACHED</div>`;
-        } else {
-            icon.className = 'barrier-hit-icon';
-            icon.innerHTML = '';
-            el.style.borderColor = 'var(--border)';
-            el.style.background = 'rgba(255,255,255,0.02)';
-            distHtml = `<div class="dist-tag">${distPct > 0 ? distPct.toFixed(1) + '% to go' : ''}</div>`;
-        }
+    function openPositionModal(payload) {
+      const row = JSON.parse(payload);
+      const phase = positionPhase(row);
+      $('position-modal-overlay').classList.add('open');
+      setText('pos-modal-sym', row.symbol);
+      setText('pos-modal-engine', row.executed_by || 'Thor');
+      setText('pos-modal-state', row.execution_state || 'THOR EXECUTED');
+      setText('pos-modal-entry', fmtPrice(row.entry));
+      setText('pos-modal-market', fmtPrice(row.current_price));
+      setText('pos-modal-size', `${fmtPrice(row.size_usd)} / ${Number(row.size || 0).toFixed(4)} units`);
+      setText('pos-modal-conf', `${Number(row.confidence || 0).toFixed(1)}%`);
+      setText('pos-modal-bank', fmtPrice(row.bank_price || row.tp1));
+      setText('pos-modal-stop', fmtPrice(row.stop_loss));
+      setText('pos-modal-peak', fmtPrice(row.runner_peak));
+      setText('pos-modal-dir', row.direction || '--');
+      $('pos-modal-phase').className = phase.cls;
+      setText('pos-modal-phase', phase.label);
+      setText('pos-modal-note', phase.note);
+
+      const bankPct = bankProgress(row);
+      const stopPct = stopPressure(row);
+      $('pos-bank-progress-fill').style.width = `${bankPct}%`;
+      $('pos-stop-progress-fill').style.width = `${stopPct}%`;
+      setText('pos-bank-progress-label', `${bankPct.toFixed(1)}%`);
+      setText('pos-stop-progress-label', `${stopPct.toFixed(1)}%`);
     }
-    
-    // Add distance tag if not already there
-    let tag = el.querySelector('.dist-tag');
-    if (!tag) {
-        tag = document.createElement('div');
-        el.appendChild(tag);
+
+    function closePositionModal() {
+      $('position-modal-overlay').classList.remove('open');
     }
-    tag.outerHTML = distHtml;
-  };
 
-  updateIndicator('pos-modal-tp1', p.tp1, true);
-  updateIndicator('pos-modal-tp2', p.tp2, true);
-  updateIndicator('pos-modal-tp3', p.tp3, true);
-  updateIndicator('pos-modal-sl', p.stop_loss, false);
+    function openSignalModal(payload) {
+      const row = JSON.parse(payload);
+      $('signal-modal-overlay').classList.add('open');
+      setText('signal-modal-sym', row.symbol || 'SYMBOL');
+      setText('signal-modal-dir', row.direction || '--');
+      setText('signal-modal-conf', `${Number(row.confidence || 0).toFixed(1)}%`);
+      setText('signal-modal-ppo', row.ppo_action == null ? 'N/A' : String(row.ppo_action));
+      setText('signal-modal-size-mult', row.ppo_size_mult == null ? 'N/A' : `${Number(row.ppo_size_mult).toFixed(2)}x`);
+      setText('signal-modal-status', row.status || 'PENDING');
+      setText('signal-modal-shap', row.shap_summary || 'No explanation available for this record.');
+    }
 
-  m.classList.add('open');
-}
+    function closeSignalModal() {
+      $('signal-modal-overlay').classList.remove('open');
+    }
 
-function closePositionModal() {
-  document.getElementById('pos-modal').classList.remove('open');
-}
-</script>
+    async function fetchAndUpdate() {
+      const [overview, predictions, models, system, thor] = await Promise.all([
+        fetchJson('/api/overview'),
+        fetchJson('/api/predictions'),
+        fetchJson('/api/models'),
+        fetchJson('/api/system'),
+        fetchJson('/api/thor')
+      ]);
 
-<!-- Add Position Modal HTML -->
-<div id="pos-modal" class="modal-overlay" onclick="if(event.target===this) closePositionModal()">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="agent-avatar">⚡</div>
-      <div>
-        <h2 id="pos-modal-sym">SYMBOL</h2>
-      </div>
-      <div id="pos-modal-dir"></div>
-      <button class="modal-close" onclick="closePositionModal()">×</button>
-    </div>
-    <div class="modal-body">
-      <div class="modal-section">
-        <h3>Position Details</h3>
-        <div class="modal-stats">
-          <div class="modal-stat"><div class="label">Entry Price</div><div class="val" id="pos-modal-entry">—</div></div>
-          <div class="modal-stat"><div class="label" style="color:var(--accent-2)">Market Price</div><div class="val" id="pos-modal-market">—</div></div>
-          <div class="modal-stat"><div class="label">Total Notional</div><div class="val" id="pos-modal-size" style="font-size:14px">—</div></div>
-          <div class="modal-stat"><div class="label">Confidence</div><div class="val" id="pos-modal-conf">—</div></div>
-        </div>
-      </div>
-      <div class="modal-section">
-        <h3>Exit Barriers & Risk</h3>
-        <div class="modal-stats">
-          <div class="modal-stat"><div class="label" style="color:var(--green)">Take Profit 1</div><div class="val" id="pos-modal-tp1">—</div></div>
-          <div class="modal-stat"><div class="label" style="color:var(--green)">Take Profit 2</div><div class="val" id="pos-modal-tp2">—</div></div>
-          <div class="modal-stat"><div class="label" style="color:var(--green)">Take Profit 3</div><div class="val" id="pos-modal-tp3">—</div></div>
-          <div class="modal-stat"><div class="label" style="color:var(--red)">Stop Loss</div><div class="val" id="pos-modal-sl">—</div></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+      renderOverview(overview);
+      renderPredictions(predictions);
+      renderModels(models);
+      renderSystem(system);
+      renderThor(thor);
+    }
 
+    function setTab(tab) {
+      state.tab = tab;
+      document.querySelectorAll('.tab').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.tab === tab);
+      });
+      document.querySelectorAll('.panel').forEach((panel) => {
+        panel.classList.toggle('active', panel.id === `panel-${tab}`);
+      });
+    }
+
+    document.querySelectorAll('.tab').forEach((btn) => {
+      btn.addEventListener('click', () => setTab(btn.dataset.tab));
+    });
+
+    $('toggle-active').addEventListener('click', () => {
+      state.positionView = 'active';
+      $('toggle-active').classList.add('active');
+      $('toggle-history').classList.remove('active');
+      if (state.overview) renderPositions(state.overview);
+    });
+
+    $('toggle-history').addEventListener('click', () => {
+      state.positionView = 'history';
+      $('toggle-history').classList.add('active');
+      $('toggle-active').classList.remove('active');
+      if (state.overview) renderPositions(state.overview);
+    });
+
+    [['filter-all', 'all'], ['filter-wins', 'wins'], ['filter-losses', 'losses']].forEach(([id, value]) => {
+      $(id).addEventListener('click', () => {
+        state.historyFilter = value;
+        ['filter-all', 'filter-wins', 'filter-losses'].forEach((key) => $(key).classList.toggle('active', key === id));
+        if (state.overview) renderPositions(state.overview);
+      });
+    });
+
+    setInterval(() => {
+      setText('live-clock', new Date().toLocaleTimeString());
+    }, 1000);
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closePositionModal();
+        closeSignalModal();
+      }
+    });
+
+    initCharts();
+    setText('live-clock', new Date().toLocaleTimeString());
+    fetchAndUpdate();
+    setInterval(fetchAndUpdate, 5000);
+  </script>
 </body>
 </html>

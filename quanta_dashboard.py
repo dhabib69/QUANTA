@@ -86,6 +86,7 @@ def _get_overview():
     initial_balance = 0
     total_pnl = 0
     active_positions = []
+    legacy_active_positions = []
     trade_history = []
     if paper:
         balance = getattr(paper, 'balance', 0)
@@ -106,17 +107,28 @@ def _get_overview():
             entry_price = pos.get('entry', 0)
             size = pos.get('size', 0)
             direction = pos.get('direction', '?')
+            specialist = str(pos.get('specialist') or '').lower()
+            display_agent = pos.get('display_agent') or display_agent_name(specialist or 'unknown')
+            is_thor_executed = specialist == 'thor' and direction == 'BULLISH'
+            execution_state = 'THOR EXECUTED' if is_thor_executed else 'LEGACY / NON-THOR'
             
-            # Use specific name to avoid any potential scoping issues
+            # For executed Thor positions, use the live paper-trading barriers
+            # persisted on the position itself. daily_picks are alert-level
+            # suggestions and do not reflect Thor v2's bank/trailing geometry.
             active_pick = symbol_to_pick.get(sym, {})
             tp1, tp2, tp3, sl = 0, 0, 0, 0
-            
-            if active_pick:
+
+            if is_thor_executed:
+                tp1 = pos.get('tp1_price', 0)
+                tp2 = pos.get('tp2_price', 0)
+                tp3 = pos.get('tp3_price', 0)
+                sl = pos.get('sl_price', 0)
+            elif active_pick:
                 tp1 = active_pick.get('tp1', 0)
                 tp2 = active_pick.get('tp2', 0)
                 tp3 = active_pick.get('tp3', 0)
                 sl = active_pick.get('sl', active_pick.get('stop_loss', 0))
-            
+
             # Robust mathematical fallback if specific targets are missing
             atr_pct = pos.get('atr_percent') or 2.0  # Default to 2% ATR if metadata missing
             if entry_price > 0 and (tp1 == 0 or sl == 0):
@@ -131,29 +143,61 @@ def _get_overview():
                     tp3 = tp3 or (entry_price * (1 - (atr_pct * 4.5) / 100))
                     sl = sl or (entry_price * (1 + (atr_pct * 1.5) / 100))
 
-            active_positions.append({
+            current_price = 0
+            try:
+                if hasattr(bot, 'candle_store') and getattr(bot, 'candle_store') is not None:
+                    current_price = getattr(bot.candle_store, 'last_price', lambda _sym: 0)(sym) or 0
+            except Exception:
+                current_price = 0
+            if not current_price:
+                try:
+                    if hasattr(bot, 'bnc') and getattr(bot, 'bnc') is not None:
+                        current_price = bot.bnc.get_ticker(sym) or 0
+                except Exception:
+                    current_price = 0
+
+            pos_row = {
                 'symbol': sym,
                 'direction': direction,
+                'executed_by': display_agent,
+                'execution_state': execution_state,
+                'is_thor_executed': is_thor_executed,
                 'entry': entry_price,
                 'size': size,
                 'size_usd': entry_price * size,
                 'confidence': round(pos.get('confidence', 0), 1),
+                'specialist': specialist,
                 'time': str(pos.get('time', '')),
                 'tp1': tp1,
                 'tp2': tp2,
                 'tp3': tp3,
                 'stop_loss': sl,
-                'current_price': (getattr(bot, 'candle_store', None).last_price(sym) if hasattr(bot, 'candle_store') else 0) or (getattr(bot, 'bnc', None).get_ticker(sym) if hasattr(bot, 'bnc') else 0),
-            })
+                'current_price': current_price,
+                'thor_bank_hit': bool(pos.get('thor_bank_hit', False)),
+                'thor_trail_active': bool(pos.get('thor_trail_active', False)),
+                'runner_peak': pos.get('thor_runner_peak', 0),
+                'bank_price': pos.get('thor_bank_price', tp1),
+            }
+            if is_thor_executed:
+                active_positions.append(pos_row)
+            else:
+                legacy_active_positions.append(pos_row)
         history = getattr(paper, 'history', [])
         for t in history[-30:]:
             if isinstance(t, dict):
-                trade_history.append(t)
+                trade = dict(t)
             elif hasattr(t, '__dict__'):
                 try:
-                    trade_history.append(asdict(t))
+                    trade = asdict(t)
                 except Exception:
-                    pass
+                    continue
+            else:
+                continue
+            hist_specialist = str(trade.get('specialist') or '').lower()
+            hist_agent = trade.get('display_agent') or display_agent_name(hist_specialist or 'unknown')
+            trade['executed_by'] = hist_agent
+            trade['execution_state'] = 'THOR EXECUTED' if hist_specialist == 'thor' and trade.get('direction') == 'BULLISH' else 'RECORDED TRADE'
+            trade_history.append(trade)
 
     # Equity curve from paper logger
     equity_curve = []
@@ -259,6 +303,10 @@ def _get_overview():
         'current_drawdown': round(current_dd, 2),
         'max_drawdown': round(max_dd, 2),
         'active_positions': active_positions,
+        'legacy_active_positions_detail': legacy_active_positions,
+        'thor_active_positions': sum(1 for p in active_positions if p.get('is_thor_executed')),
+        'legacy_active_positions': len(legacy_active_positions),
+        'rl_enabled': bool(getattr(getattr(bot, 'cfg', None), 'rl_enabled', False)),
         'trade_history': trade_history,
         'equity_curve': equity_curve,
         'risk_status': risk_status,
@@ -474,6 +522,103 @@ def _get_system():
     }
 
 
+def _get_thor():
+    """Thor model status, live params, WF sim results, Nike screener health."""
+    bot = _bot
+
+    # Live config params - source of truth is the active Thor v2 exit profile,
+    # not the stale legacy thor_* aliases.
+    cfg = _safe(bot, 'cfg')
+    params = {}
+    exit_profile = {}
+    paper = _safe(bot, 'paper') if bot else None
+    if paper and hasattr(paper, '_build_thor_exit_profile'):
+        try:
+            exit_profile = paper._build_thor_exit_profile() or {}
+        except Exception:
+            exit_profile = {}
+    if cfg or exit_profile:
+        params = {
+            'sl_atr':            exit_profile.get('sl_atr', 3.00),
+            'bank_atr':          exit_profile.get('bank_atr', 4.20),
+            'runner_trail_atr':  exit_profile.get('runner_trail_atr', 2.00),
+            'bank_fraction':     exit_profile.get('bank_fraction', 0.35),
+            'trail_activate_atr':exit_profile.get('trail_activate_atr', 1.50),
+            'mae_veto_bars':     exit_profile.get('mae_veto_bars', 5),
+            'mae_veto_atr':      exit_profile.get('mae_veto_atr', 3.62),
+            'min_score':         getattr(cfg, 'thor_min_score_trade', 68.0) if cfg else 68.0,
+            'context_min_score': getattr(cfg, 'thor_context_min_score', 72.0) if cfg else 72.0,
+            'max_bars_pre_bank': exit_profile.get('max_bars_pre_bank', getattr(cfg, 'thor_max_bars_pre_bank', 48) if cfg else 48),
+            'max_bars_post_bank':exit_profile.get('max_bars_post_bank', getattr(cfg, 'thor_max_bars_post_bank', 96) if cfg else 96),
+            'compound_mode':     getattr(cfg, 'thor_compound_mode', 'asymmetric_target') if cfg else 'asymmetric_target',
+        }
+
+    # Thor model generation (count .cbm files)
+    import glob as _glob
+    cbm_files = sorted(_glob.glob('C:/Users/habib/QUANTA/models/thor_gen*.cbm'))
+    thor_gen = len(cbm_files)
+    last_trained_ts = None
+    if cbm_files:
+        try:
+            last_trained_ts = os.path.getmtime(cbm_files[-1])
+        except Exception:
+            pass
+
+    # Brier score for Thor if available
+    ml = _safe(bot, 'ml')
+    thor_brier = None
+    if ml and hasattr(ml, '_brier_scores'):
+        bs = ml._brier_scores.get('thor', {})
+        cnt = bs.get('count', 0)
+        if cnt > 0:
+            thor_brier = round(bs['sum'] / cnt, 4)
+
+    # Nike screener health
+    nike = getattr(bot, 'nike_screener', None) if bot else None
+    nike_info = {
+        'active': nike is not None,
+        'symbols_watched': getattr(nike, '_n_streams', 0) if nike else 0,
+        'signals_today': getattr(nike, '_signals_today', 0) if nike else 0,
+        'total_signals': getattr(nike, '_total_signals', 0) if nike else 0,
+    }
+
+    # WF sim results if available
+    wf_results = {}
+    wf_path = Path('C:/Users/habib/QUANTA/wf_sim_results.json')
+    if wf_path.exists():
+        try:
+            with open(wf_path, 'r', encoding='utf-8') as _f:
+                wf_results = json.load(_f)
+        except Exception:
+            pass
+
+    # Latest WF run folder
+    wf_runs = sorted(_glob.glob('C:/Users/habib/QUANTA/wf_runs/*/'), reverse=True)
+    latest_wf_run = os.path.basename(wf_runs[0].rstrip('/')) if wf_runs else None
+
+    # Paper perf snapshot (same source as overview)
+    paper_perf = {
+        'balance': round(getattr(paper, 'balance', 0), 2),
+        'pnl': round(getattr(paper, 'total_pnl', 0), 2),
+        'trades': getattr(paper, 'total_trades', 0),
+        'wins': getattr(paper, 'total_wins', 0),
+        'losses': getattr(paper, 'total_losses', 0),
+    }
+
+    return {
+        'generation': thor_gen,
+        'last_trained_ts': last_trained_ts,
+        'params': params,
+        'brier': thor_brier,
+        'baldur_live': False,
+        'freya_live': False,
+        'nike': nike_info,
+        'wf_results': wf_results,
+        'latest_wf_run': latest_wf_run,
+        'paper_perf': paper_perf,
+    }
+
+
 # ─── Routes ───────────────────────────────────────────────────────────
 
 @app.route('/api/settings', methods=['GET', 'POST'])
@@ -540,6 +685,10 @@ def api_models():
 @app.route('/api/system')
 def api_system():
     return jsonify(_get_system())
+
+@app.route('/api/thor')
+def api_thor():
+    return jsonify(_get_thor())
 
 # Keep old endpoint for backward compat
 @app.route('/api/status')
